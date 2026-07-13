@@ -7,6 +7,11 @@ import { summaryHTML } from "./render.js";
 
 const $ = (id) => document.getElementById(id);
 
+// The "MPlus Dashboard" WCL API client id. Client ids are public
+// identifiers (useless without the secret); the secret is never stored in
+// this repo — paste it in Setup once and it stays in your browser.
+const DEFAULT_CLIENT_ID = "a1fd073d-42da-47f6-89da-9c78dec3c75a";
+
 // localStorage keys (kllTokenUrl/kllApiUrl exist so tests — or a future
 // proxy — can repoint the endpoints)
 const LS = {
@@ -172,6 +177,9 @@ function refreshSetupState() {
   const have = localStorage.getItem(LS.clientId) && localStorage.getItem(LS.clientSecret);
   $("creds-state").textContent = have ? "credentials saved in this browser ✓" : "no credentials yet";
   $("setup").open = !have;
+  if (!have && !$("client-id").value) {
+    $("client-id").value = DEFAULT_CLIENT_ID;
+  }
 }
 
 function saveCreds() {
