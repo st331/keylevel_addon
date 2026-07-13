@@ -126,11 +126,66 @@ test("fetch: end-to-end writes Data.lua, caches slug, second run skips bad slug"
     const db = JSON.parse(fs.readFileSync(config.dbPath, "utf8"));
     assert.equal(db.realmSlugCache.Area52, "area52", "working slug cached");
 
-    // second run: cached slug used directly, zone cache avoids re-query
+    // second run without --force: skipped, player is fresh (default 30m)
     state.characterQueries.length = 0;
     const run2 = await runCli(["fetch", "--config", configPath, "--names", "Foo-Area52"]);
     assert.equal(run2.status, 0, run2.stderr);
+    assert.match(run2.stdout, /skipped 1 character/, "fresh player skipped");
+    assert.deepEqual(state.characterQueries, [], "no API traffic when fresh");
+
+    // third run with --force: cached slug used directly, no wasted attempt
+    const run3 = await runCli(["fetch", "--config", configPath, "--names", "Foo-Area52", "--force"]);
+    assert.equal(run3.status, 0, run3.stderr);
     assert.deepEqual(state.characterQueries, ["area52"], "no wasted slug attempt");
+  } finally {
+    server.close();
+  }
+});
+
+test("fetch: character not on WCL is written as missing", async () => {
+  const { server, port } = await startFakeWcl();
+  try {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kll-miss-"));
+    const config = {
+      clientId: "id", clientSecret: "secret", region: "us",
+      tokenUrl: `http://127.0.0.1:${port}/token`,
+      apiUrl: `http://127.0.0.1:${port}/gql`,
+      outPath: path.join(dir, "Data.lua"), dbPath: path.join(dir, "db.json"),
+    };
+    const configPath = path.join(dir, "config.json");
+    fs.writeFileSync(configPath, JSON.stringify(config));
+
+    // "Ghost-Sargeras": single-word realm, one slug candidate, never found
+    const run = await runCli(["fetch", "--config", configPath, "--names", "Ghost-Sargeras"]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stderr + run.stdout, /not found on WCL: Ghost-Sargeras/);
+    const lua = fs.readFileSync(config.outPath, "utf8");
+    assert.match(lua, /\["Ghost-Sargeras"\]/, "missing player present in data");
+    assert.match(lua, /missing = true/, "flagged as missing so the addon can say so");
+  } finally {
+    server.close();
+  }
+});
+
+test("fetch --sv with no recent applicants exits 0 (watch-mode safety)", async () => {
+  const { server, state, port } = await startFakeWcl();
+  try {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kll-empty-"));
+    const svPath = path.join(dir, "KeyLevelLogs.lua");
+    fs.writeFileSync(svPath, 'KeyLevelLogsDB = { ["seenApplicants"] = { } }');
+    const config = {
+      clientId: "id", clientSecret: "secret", region: "us",
+      tokenUrl: `http://127.0.0.1:${port}/token`,
+      apiUrl: `http://127.0.0.1:${port}/gql`,
+      outPath: path.join(dir, "Data.lua"), dbPath: path.join(dir, "db.json"),
+    };
+    const configPath = path.join(dir, "config.json");
+    fs.writeFileSync(configPath, JSON.stringify(config));
+
+    const run = await runCli(["fetch", "--config", configPath, "--sv", svPath]);
+    assert.equal(run.status, 0, `must not die: ${run.stderr}`);
+    assert.match(run.stdout, /no applicants to fetch yet/);
+    assert.equal(state.tokenRequests, 0, "no pointless API traffic");
   } finally {
     server.close();
   }

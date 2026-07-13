@@ -47,7 +47,8 @@ test("playersFromResults builds the addon model", () => {
     { key: "Missing-Realm", result: null },
   ];
   const { players } = playersFromResults(results, 1752000000);
-  assert.ok(!players["Missing-Realm"], "not-found character omitted");
+  assert.deepEqual(players["Missing-Realm"], { missing: true, updated: 1752000000 },
+    "not-found character recorded as missing");
   const foo = players["Foo-Area52"];
   assert.equal(foo.class, "MAGE");
   assert.equal(foo.updated, 1752000000);

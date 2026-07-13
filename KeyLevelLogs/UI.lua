@@ -7,7 +7,7 @@ local ADDON_NAME, ns = ...
 local UI = {}
 ns.UI = UI
 
-local WIDTH = 500
+local WIDTH = 560
 local PAD = 10
 local ROW_HEIGHT = 16
 local MAX_ROWS = 12
@@ -15,6 +15,7 @@ local HEADER_AREA = 58   -- title + context + column headers
 local FOOTER_AREA = 26
 
 local COL_NAME_W = 150
+local COL_SCORE_W = 52
 local COL_ANY_W = 150
 
 --------------------------------------------------------------------------
@@ -32,7 +33,16 @@ end
 -- "Any dungeon at this key level" column.
 function UI.AnyCell(eval, level)
   if eval.status == "NO_PLAYER" then
-    return gray("no data")
+    return gray("not fetched — /kll copy")
+  end
+  if eval.status == "NO_WCL" then
+    return gray("no WCL character")
+  end
+  if not level then
+    if eval.anyBest then
+      return ("%s +%d: %s"):format(gray("best:"), eval.anyBest.level, pctText(eval.anyBest.pct))
+    end
+    return gray("set level: /kll 12")
   end
   if eval.anyAtLevel then
     local runs = eval.anyAtLevel.runs or 0
@@ -40,37 +50,43 @@ function UI.AnyCell(eval, level)
       gray(("(%d dungeon%s)"):format(runs, runs == 1 and "" or "s")))
   end
   if eval.anyBest then
-    return ("%s +%d: %s"):format(gray("none · best"), eval.anyBest.level, pctText(eval.anyBest.pct))
-  end
-  if not level then
-    return gray("set level: /kll 12")
+    return ("%s +%d: %s"):format(gray(("none at +%d · best"):format(level)), eval.anyBest.level, pctText(eval.anyBest.pct))
   end
   return gray("no M+ logs")
 end
 
--- "This dungeon" column (exact level, or one below as fallback).
+-- "This dungeon" column: exact level, nearest higher level, or one below.
 function UI.DungeonCell(eval, level, encounterID)
-  if eval.status == "NO_PLAYER" then
+  if eval.status ~= "OK" or not encounterID then
     return gray("—")
   end
-  if not encounterID then
-    return gray("—")
-  end
-  if eval.dungeon then
-    if eval.dungeon.isFallback then
-      return ("%s %s"):format(pctText(eval.dungeon.pct), gray(("@+%d (one below)"):format(eval.dungeon.level)))
+  local d = eval.dungeon
+  if d then
+    if d.kind == "below" then
+      return ("%s %s"):format(pctText(d.pct), gray(("@+%d (one below)"):format(d.level)))
+    elseif d.kind == "above" then
+      return ("%s %s"):format(pctText(d.pct), gray(("@+%d (higher)"):format(d.level)))
     end
-    return ("%s %s"):format(pctText(eval.dungeon.pct), gray(("@+%d"):format(eval.dungeon.level)))
+    return ("%s %s"):format(pctText(d.pct), gray(("@+%d"):format(d.level)))
   end
   if eval.dungeonBest then
-    return ("%s +%d: %s"):format(gray("no recent · best"), eval.dungeonBest.level, pctText(eval.dungeonBest.pct))
+    return ("%s +%d: %s"):format(gray("only lower · best"), eval.dungeonBest.level, pctText(eval.dungeonBest.pct))
   end
   return gray("never logged")
 end
 
+-- In-game M+ rating (comes free with the application; works even for
+-- players the companion hasn't fetched).
+function UI.ScoreCell(score)
+  if type(score) == "number" and score > 0 then
+    return tostring(score)
+  end
+  return gray("—")
+end
+
 -- Sort key: strongest relevant signal first, unknowns last.
 function UI.SortValue(eval)
-  if eval.status == "NO_PLAYER" then return -2 end
+  if eval.status ~= "OK" then return -2 end
   if eval.dungeon then return eval.dungeon.pct end
   if eval.anyAtLevel then return eval.anyAtLevel.pct - 0.001 end
   if eval.dungeonBest then return -1 + (eval.dungeonBest.pct or 0) / 1000 end
@@ -120,20 +136,28 @@ function UI:Init()
   context:SetJustifyH("LEFT")
   self.context = context
 
-  local close = CreateFrame("Button", "KeyLevelLogsCloseButton", f)
-  close:SetSize(20, 20)
-  close:SetPoint("TOPRIGHT", -4, -4)
-  close:SetText("X")
-  close:SetScript("OnClick", function() UI:SetShown(false) end)
+  -- UIPanelCloseButton: template supplies textures; a bare Button would be
+  -- invisible in the live client. Closing snoozes for this applicant batch
+  -- only (see Snooze) — /kll hide is the persistent off switch.
+  local close = CreateFrame("Button", "KeyLevelLogsCloseButton", f, "UIPanelCloseButton")
+  close:SetPoint("TOPRIGHT", -2, -2)
+  close:SetScript("OnClick", function() UI:Snooze() end)
   self.closeButton = close
 
+  local x = PAD
   local headName = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  headName:SetPoint("TOPLEFT", PAD, -(HEADER_AREA - 14))
+  headName:SetPoint("TOPLEFT", x, -(HEADER_AREA - 14))
   headName:SetText("Applicant")
+  x = x + COL_NAME_W
+  local headScore = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  headScore:SetPoint("TOPLEFT", x, -(HEADER_AREA - 14))
+  headScore:SetText("Rating")
+  x = x + COL_SCORE_W
   local headAny = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  headAny:SetPoint("TOPLEFT", PAD + COL_NAME_W, -(HEADER_AREA - 14))
+  headAny:SetPoint("TOPLEFT", x, -(HEADER_AREA - 14))
+  x = x + COL_ANY_W
   local headDungeon = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  headDungeon:SetPoint("TOPLEFT", PAD + COL_NAME_W + COL_ANY_W, -(HEADER_AREA - 14))
+  headDungeon:SetPoint("TOPLEFT", x, -(HEADER_AREA - 14))
   self.headAny, self.headDungeon = headAny, headDungeon
 
   self.rows = {}
@@ -143,15 +167,17 @@ function UI:Init()
   footer:SetJustifyH("LEFT")
   self.footer = footer
 
-  local copyBtn = CreateFrame("Button", "KeyLevelLogsCopyButton", f)
-  copyBtn:SetSize(50, 18)
-  copyBtn:SetPoint("BOTTOMRIGHT", -8, 6)
+  local copyBtn = CreateFrame("Button", "KeyLevelLogsCopyButton", f, "UIPanelButtonTemplate")
+  copyBtn:SetSize(60, 20)
+  copyBtn:SetPoint("BOTTOMRIGHT", -8, 5)
   copyBtn:SetText("Copy")
   copyBtn:SetScript("OnClick", function() UI:ShowCopyBox() end)
   self.copyButton = copyBtn
 
   self:RestorePosition()
-  f:SetShown(ns.db and ns.db.window.shown or false)
+  -- start hidden; Refresh auto-shows when applicants exist (no empty window
+  -- squatting on screen after every login)
+  f:Hide()
   self:Refresh()
 end
 
@@ -159,19 +185,20 @@ function UI:Row(i)
   if self.rows[i] then return self.rows[i] end
   local f = self.frame
   local y = -(HEADER_AREA + (i - 1) * ROW_HEIGHT)
-  local name = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  name:SetPoint("TOPLEFT", PAD, y)
-  name:SetWidth(COL_NAME_W - 6)
-  name:SetJustifyH("LEFT")
-  local any = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  any:SetPoint("TOPLEFT", PAD + COL_NAME_W, y)
-  any:SetWidth(COL_ANY_W - 6)
-  any:SetJustifyH("LEFT")
-  local dungeon = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  dungeon:SetPoint("TOPLEFT", PAD + COL_NAME_W + COL_ANY_W, y)
-  dungeon:SetWidth(WIDTH - COL_NAME_W - COL_ANY_W - PAD * 2)
-  dungeon:SetJustifyH("LEFT")
-  self.rows[i] = { name = name, any = any, dungeon = dungeon }
+  local x = PAD
+  local function col(width)
+    local fs = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    fs:SetPoint("TOPLEFT", x, y)
+    fs:SetWidth(width - 6)
+    fs:SetJustifyH("LEFT")
+    x = x + width
+    return fs
+  end
+  local name = col(COL_NAME_W)
+  local score = col(COL_SCORE_W)
+  local any = col(COL_ANY_W)
+  local dungeon = col(WIDTH - COL_NAME_W - COL_SCORE_W - COL_ANY_W - PAD * 2)
+  self.rows[i] = { name = name, score = score, any = any, dungeon = dungeon }
   return self.rows[i]
 end
 
@@ -198,10 +225,15 @@ end
 --------------------------------------------------------------------------
 -- Visibility
 --------------------------------------------------------------------------
+-- Three layers:
+--   db.window.shown  persistent preference (/kll show|hide)
+--   sessionSnoozed   the X button: hide until this applicant batch clears
+--   auto-show        new applicants pop the window when allowed by both
 
 function UI:SetShown(shown)
   if not self.frame then return end
   if ns.db then ns.db.window.shown = shown end
+  self.sessionSnoozed = false
   self.frame:SetShown(shown)
   if shown then self:Refresh() end
 end
@@ -209,6 +241,12 @@ end
 function UI:Toggle()
   if not self.frame then return end
   self:SetShown(not self.frame:IsShown())
+end
+
+function UI:Snooze()
+  if not self.frame then return end
+  self.sessionSnoozed = true
+  self.frame:Hide()
 end
 
 --------------------------------------------------------------------------
@@ -241,7 +279,7 @@ function UI:Refresh()
   self.context:SetText(contextLine(ctx))
   self.headAny:SetText(ctx.level and ("Any dungeon @+%d"):format(ctx.level) or "Any dungeon")
   if ctx.level and ctx.encounterID then
-    self.headDungeon:SetFormattedText("This dungeon +%d/+%d", ctx.level, ctx.level - 1)
+    self.headDungeon:SetFormattedText("This dungeon (want +%d)", ctx.level)
   else
     self.headDungeon:SetText("This dungeon")
   end
@@ -249,8 +287,9 @@ function UI:Refresh()
   -- evaluate + sort applicants
   local entries = {}
   for _, app in ipairs(ns.applicants) do
-    local eval = ns.Evaluate(ns.LookupPlayer(app.name), ctx.encounterID, ctx.level)
-    entries[#entries + 1] = { app = app, eval = eval, sort = UI.SortValue(eval) }
+    local player = ns.LookupPlayer(app.name)
+    local eval = ns.Evaluate(player, ctx.encounterID, ctx.level)
+    entries[#entries + 1] = { app = app, eval = eval, player = player, sort = UI.SortValue(eval) }
   end
   table.sort(entries, function(a, b)
     if a.sort ~= b.sort then return a.sort > b.sort end
@@ -261,18 +300,25 @@ function UI:Refresh()
   for i = 1, shown do
     local row = self:Row(i)
     local e = entries[i]
-    row.name:SetText(ns.ClassColor(ns.DisplayName(e.app.name), e.app.class))
+    local name = ns.ClassColor(ns.DisplayName(e.app.name), e.app.class)
+    local age = e.player and ns.AgeTag(e.player.updated)
+    if age then
+      name = name .. " " .. gray("(" .. age .. ")")
+    end
+    row.name:SetText(name)
+    row.score:SetText(UI.ScoreCell(e.app.score))
     row.any:SetText(UI.AnyCell(e.eval, ctx.level))
     row.dungeon:SetText(UI.DungeonCell(e.eval, ctx.level, ctx.encounterID))
-    row.name:Show(); row.any:Show(); row.dungeon:Show()
+    row.name:Show(); row.score:Show(); row.any:Show(); row.dungeon:Show()
   end
   for i = shown + 1, #self.rows do
     local row = self.rows[i]
-    row.name:Hide(); row.any:Hide(); row.dungeon:Hide()
+    row.name:Hide(); row.score:Hide(); row.any:Hide(); row.dungeon:Hide()
   end
 
   if #entries == 0 then
     self.footer:SetText(gray("No applicants right now."))
+    self.sessionSnoozed = false -- batch is over; next batch may pop again
   elseif #entries > shown then
     self.footer:SetText(gray(("+%d more applicant(s) not shown"):format(#entries - shown)))
   else
@@ -282,8 +328,9 @@ function UI:Refresh()
   local rowsForHeight = math.max(shown, 1)
   self.frame:SetHeight(HEADER_AREA + FOOTER_AREA + rowsForHeight * ROW_HEIGHT)
 
-  -- pop the window when applicants arrive, if the user hasn't hidden it
-  if #entries > 0 and db and db.autoShow and db.window.shown and not self.frame:IsShown() then
+  -- pop the window when applicants arrive, unless the user said no
+  if #entries > 0 and db and db.autoShow and db.window.shown
+    and not self.sessionSnoozed and not self.frame:IsShown() then
     self.frame:Show()
   end
 end
@@ -346,7 +393,7 @@ function UI:ShowCopyBox()
     scroll:SetScrollChild(edit)
     cf.edit = edit
 
-    local closeBtn = CreateFrame("Button", "KeyLevelLogsCopyClose", cf)
+    local closeBtn = CreateFrame("Button", "KeyLevelLogsCopyClose", cf, "UIPanelButtonTemplate")
     closeBtn:SetSize(60, 20)
     closeBtn:SetPoint("BOTTOMRIGHT", -10, 8)
     closeBtn:SetText("Close")

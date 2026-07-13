@@ -14,13 +14,15 @@ export function luaString(s) {
     '"': '\\"',
     "\n": "\\n",
     "\r": "\\r",
-    "\0": "\\0",
+    "\0": "\\000", // 3 digits: lua's \ddd escape would swallow a following digit
   }[ch])) + '"';
 }
 
 function luaKey(k) {
-  // numeric-looking keys become [123]; identifier-safe strings stay bare
-  if (typeof k === "number" || /^-?\d+$/.test(k)) return `[${k}]`;
+  // canonical numeric keys become [123]; "012"-style strings must stay
+  // strings or they'd collide with the number 12
+  if (typeof k === "number") return `[${k}]`;
+  if (/^-?\d+$/.test(k) && String(Number(k)) === k) return `[${k}]`;
   if (LUA_IDENT.test(k) && !LUA_KEYWORDS.has(k)) return k;
   return `[${luaString(k)}]`;
 }

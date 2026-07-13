@@ -7,6 +7,16 @@ local ADDON_NAME, ns = ...
 
 ns.VERSION = "0.1.0"
 
+-- Midnight (12.0) can hand addons "secret" values in some contexts; treat
+-- them as unusable. issecretvalue does not exist on older clients.
+-- ORDER MATTERS: issecretvalue must run first — comparing a secret value
+-- (even to nil) raises, while issecretvalue is always safe.
+local function usable(v)
+  if issecretvalue and issecretvalue(v) then return false end
+  return v ~= nil
+end
+ns.IsUsableValue = usable
+
 --------------------------------------------------------------------------
 -- Percentile colors (Warcraft Logs tiers)
 --------------------------------------------------------------------------
@@ -36,6 +46,16 @@ end
 
 ns.GRAY = "|cff808080%s|r"
 
+-- "5d" marker for player data older than 48 hours; nil when fresh/unknown.
+function ns.AgeTag(updated)
+  if type(updated) ~= "number" then return nil end
+  local age = time() - updated
+  if age < 48 * 3600 then return nil end
+  local days = math.floor(age / 86400)
+  if days > 99 then return "99d+" end
+  return days .. "d"
+end
+
 --------------------------------------------------------------------------
 -- Names
 --------------------------------------------------------------------------
@@ -46,8 +66,12 @@ function ns.NormalizeName(name)
   if not name or name == "" then return nil end
   local char, realm = name:match("^([^%-]+)%-(.+)$")
   if not char then
+    -- bare name: realm must come from the player, but GetNormalizedRealmName
+    -- is nil during loading screens — better to skip this refresh (a later
+    -- event re-reads applicants) than to store a realm-less key
+    realm = GetNormalizedRealmName()
+    if not realm or realm == "" then return nil end
     char = name
-    realm = GetNormalizedRealmName() or ""
   end
   -- normalized realm names carry no spaces/apostrophes/hyphens/periods
   realm = realm:gsub("[%s'%-%.]", "")
@@ -124,13 +148,24 @@ function ns.EncounterByName(text)
   if not text or text == "" then return nil end
   local target = simplify(text)
   if target == "" then return nil end
-  local best, bestName
+  -- Partial matches go both ways: "ara-kara" should find the dungeon, and an
+  -- activity fullName like "Ara-Kara, City of Echoes (Mythic Keystone)"
+  -- should too. Ambiguity is resolved deterministically: prefix matches
+  -- beat substring matches, then the longest dungeon name wins.
+  local best, bestName, bestScore
   for encID, d in pairs(ns.GetData().dungeons or {}) do
     if d.name then
       local s = simplify(d.name)
       if s == target then return encID, d.name end
-      if s:find(target, 1, true) and not best then
-        best, bestName = encID, d.name
+      local score
+      if s:find(target, 1, true) == 1 or target:find(s, 1, true) == 1 then
+        score = 2000 + #s
+      elseif s:find(target, 1, true) or target:find(s, 1, true) then
+        score = 1000 + #s
+      end
+      if score and (not bestScore or score > bestScore
+        or (score == bestScore and d.name < (bestName or ""))) then
+        best, bestName, bestScore = encID, d.name, score
       end
     end
   end
@@ -141,36 +176,67 @@ end
 -- Context: which key level / dungeon are we recruiting for?
 --------------------------------------------------------------------------
 
--- Priority: explicit override (slash command) > your own keystone >
--- (dungeon only) the group you have listed in the group finder.
+-- Reads the group the player has listed in the group finder, if any.
+-- Returns encounterID, dungeonName, keyLevel (level parsed from the
+-- listing title, e.g. "AK +12 weekly"), any of which may be nil.
+local function readActiveListing()
+  if not (C_LFGList and C_LFGList.GetActiveEntryInfo) then return nil end
+  local ok, entry = pcall(C_LFGList.GetActiveEntryInfo)
+  if not ok or type(entry) ~= "table" then return nil end
+
+  local encID, dungeonName, level
+
+  local activityID = usable(entry.activityID) and entry.activityID or nil
+  if not activityID and type(entry.activityIDs) == "table" then
+    local first = entry.activityIDs[1]
+    activityID = usable(first) and first or nil
+  end
+  if activityID and C_LFGList.GetActivityInfoTable then
+    local ok2, info = pcall(C_LFGList.GetActivityInfoTable, activityID)
+    if ok2 and type(info) == "table" and usable(info.fullName) and type(info.fullName) == "string" then
+      encID, dungeonName = ns.EncounterByName(info.fullName)
+    end
+  end
+
+  if usable(entry.name) and type(entry.name) == "string" then
+    local lvl = entry.name:match("%+%s*(%d%d?)")
+    level = lvl and tonumber(lvl) or nil
+  end
+
+  return encID, dungeonName, level
+end
+
+-- Priority — level: manual override > level in your listing's title > your
+-- own keystone. Dungeon: manual override > your active listing > your own
+-- keystone. The active listing is what you're actually recruiting for, so
+-- it beats the keystone you happen to be holding.
 function ns.GetContext()
   local db = ns.db or {}
-  local level = db.keyLevelOverride or (C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel and C_MythicPlus.GetOwnedKeystoneLevel())
+  local listingEnc, listingName, listingLevel = readActiveListing()
+
+  local level = db.keyLevelOverride or listingLevel
+    or (C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel and C_MythicPlus.GetOwnedKeystoneLevel())
   if level == 0 then level = nil end
 
-  local mapID = db.dungeonOverride or (C_MythicPlus and C_MythicPlus.GetOwnedKeystoneChallengeMapID and C_MythicPlus.GetOwnedKeystoneChallengeMapID())
-  local encID, dungeonName
-  if mapID then
+  local encID, dungeonName, mapID
+  if db.dungeonOverride then
+    mapID = db.dungeonOverride
     encID, dungeonName = ns.EncounterForMap(mapID)
     if not dungeonName and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
       dungeonName = C_ChallengeMode.GetMapUIInfo(mapID)
     end
   end
-
-  -- Fall back to the group we have listed, matching the activity name.
-  if not encID and C_LFGList and C_LFGList.GetActiveEntryInfo then
-    local ok, entry = pcall(C_LFGList.GetActiveEntryInfo)
-    if ok and type(entry) == "table" then
-      local activityID = entry.activityID
-      if not activityID and type(entry.activityIDs) == "table" then
-        activityID = entry.activityIDs[1]
-      end
-      if activityID and C_LFGList.GetActivityInfoTable then
-        local ok2, info = pcall(C_LFGList.GetActivityInfoTable, activityID)
-        if ok2 and type(info) == "table" and info.fullName then
-          local e, n = ns.EncounterByName(info.fullName)
-          if e then encID, dungeonName = e, n end
-        end
+  if not encID and listingEnc then
+    encID, dungeonName = listingEnc, listingName
+  end
+  if not encID then
+    local keystoneMap = C_MythicPlus and C_MythicPlus.GetOwnedKeystoneChallengeMapID
+      and C_MythicPlus.GetOwnedKeystoneChallengeMapID() or nil
+    if keystoneMap then
+      mapID = keystoneMap
+      encID, dungeonName = ns.EncounterForMap(keystoneMap)
+      if not dungeonName and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
+        dungeonName = C_ChallengeMode.GetMapUIInfo(keystoneMap)
       end
     end
   end
@@ -184,17 +250,26 @@ end
 
 -- Pure function; takes the player's data table (may be nil) plus the target
 -- encounter/level, returns a structured verdict the UI renders:
---   status        "NO_PLAYER" | "OK"
+--   status        "NO_PLAYER" (not in the data file — companion hasn't
+--                 fetched them) | "NO_WCL" (fetched, but no such character
+--                 on Warcraft Logs) | "OK"
 --   anyAtLevel    { pct, runs }            best percentile at exactly this key
 --                                          level, across all dungeons
---   dungeon       { pct, level, spec, isFallback }
---                 this dungeon at this level, or one level below (isFallback)
+--   dungeon       { pct, level, spec, kind } this dungeon: kind "exact" (at
+--                 the level), "above" (nearest higher level — counts at
+--                 least as much), or "below" (one level below)
 --   dungeonBest   { pct, level }           best logged level for this dungeon,
 --                                          when `dungeon` is nil
 --   anyBest       { pct, level }           highest key level with any logs,
 --                                          when `anyAtLevel` is nil
 function ns.Evaluate(playerData, encounterID, keyLevel)
-  if type(playerData) ~= "table" or type(playerData.levels) ~= "table" then
+  if type(playerData) ~= "table" then
+    return { status = "NO_PLAYER" }
+  end
+  if playerData.missing then
+    return { status = "NO_WCL" }
+  end
+  if type(playerData.levels) ~= "table" then
     return { status = "NO_PLAYER" }
   end
   local levels = playerData.levels
@@ -209,12 +284,24 @@ function ns.Evaluate(playerData, encounterID, keyLevel)
     if encounterID then
       local exact = atLevel and atLevel.dungeons and atLevel.dungeons[encounterID]
       if exact then
-        result.dungeon = { pct = exact.pct, level = keyLevel, spec = exact.spec, isFallback = false }
+        result.dungeon = { pct = exact.pct, level = keyLevel, spec = exact.spec, kind = "exact" }
       else
-        local below = levels[keyLevel - 1]
-        local fb = below and below.dungeons and below.dungeons[encounterID]
-        if fb then
-          result.dungeon = { pct = fb.pct, level = keyLevel - 1, spec = fb.spec, isFallback = true }
+        -- a run at a higher level counts at least as much as one at level
+        local aboveLevel
+        for level, entry in pairs(levels) do
+          if level > keyLevel and entry.dungeons and entry.dungeons[encounterID] then
+            if not aboveLevel or level < aboveLevel then aboveLevel = level end
+          end
+        end
+        if aboveLevel then
+          local d = levels[aboveLevel].dungeons[encounterID]
+          result.dungeon = { pct = d.pct, level = aboveLevel, spec = d.spec, kind = "above" }
+        else
+          local below = levels[keyLevel - 1]
+          local fb = below and below.dungeons and below.dungeons[encounterID]
+          if fb then
+            result.dungeon = { pct = fb.pct, level = keyLevel - 1, spec = fb.spec, kind = "below" }
+          end
         end
       end
     end
@@ -298,14 +385,6 @@ ns.applicants = {}
 
 local INTERESTING_STATUS = { applied = true, invited = true }
 
--- Midnight (12.0) can hand addons "secret" values in some contexts; treat
--- them as unusable. issecretvalue does not exist on older clients.
-local function usable(v)
-  if v == nil then return false end
-  if issecretvalue and issecretvalue(v) then return false end
-  return true
-end
-
 -- One applicant group; every value from C_LFGList is treated as potentially
 -- secret (Midnight 12.0), so the caller wraps this in pcall — loop bounds,
 -- table indexing and comparisons on secrets all raise.
@@ -316,13 +395,17 @@ local function processApplicant(id, out)
   if not INTERESTING_STATUS[info.applicationStatus or "applied"] then return end
   if not usable(info.numMembers) then return end
   for m = 1, info.numMembers or 0 do
-    -- Only the first two returns (name, class token) are relied upon.
-    local name, class = C_LFGList.GetApplicantMemberInfo(id, m)
+    -- Positional returns; only name, class and dungeonScore are used.
+    local name, class, _, _, _, _, _, _, _, _, _, dungeonScore =
+      C_LFGList.GetApplicantMemberInfo(id, m)
     local full = (usable(name) and type(name) == "string")
       and ns.NormalizeName(name) or nil
     if not usable(class) then class = nil end
+    if not usable(dungeonScore) or type(dungeonScore) ~= "number" or dungeonScore <= 0 then
+      dungeonScore = nil
+    end
     if full then
-      table.insert(out, { name = full, class = class, applicantID = id })
+      table.insert(out, { name = full, class = class, score = dungeonScore, applicantID = id })
       if ns.db then
         ns.db.seenApplicants[full] = { lastSeen = time(), class = class }
       end
@@ -378,7 +461,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     if ns.UI and ns.UI.Init then ns.UI:Init() end
     ns.RefreshApplicants()
   else
-    -- any LFG applicant/entry change
+    -- any LFG applicant/entry change (or a fresh loading screen)
     ns.QueueRefresh()
   end
 end)
@@ -418,13 +501,18 @@ function ns.HandleSlash(input)
     if ns.UI then ns.UI:SetShown(false) end
   elseif cmd:match("^%+?%d+$") then
     local level = tonumber(cmd:match("%d+"))
-    ns.db.keyLevelOverride = level
-    ns.Print(("key level set to +%d (use /kll auto to follow your keystone)"):format(level))
+    if level < 2 then
+      ns.db.keyLevelOverride = nil
+      ns.Print("key levels start at +2 — following your listing/keystone instead")
+    else
+      ns.db.keyLevelOverride = level
+      ns.Print(("key level set to +%d (use /kll auto to follow your keystone/listing)"):format(level))
+    end
     if ns.UI then ns.UI:Refresh() end
   elseif cmd == "auto" or cmd == "clear" then
     ns.db.keyLevelOverride = nil
     ns.db.dungeonOverride = nil
-    ns.Print("following your own keystone again")
+    ns.Print("following your listing/keystone again")
     if ns.UI then ns.UI:Refresh() end
   elseif cmd == "dungeon" then
     if rest == "" or rest:lower() == "clear" or rest:lower() == "auto" then

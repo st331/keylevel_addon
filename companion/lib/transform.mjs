@@ -49,7 +49,12 @@ export function bestPerLevel(blob) {
 export function playersFromResults(charResults, nowSeconds) {
   const players = {};
   for (const c of charResults) {
-    if (!c.result) continue; // character not found on WCL
+    if (!c.result) {
+      // Character not found on WCL. Record that fact so the addon can say
+      // "no WCL character" (definitive) instead of "not fetched yet".
+      players[c.key] = { missing: true, updated: nowSeconds };
+      continue;
+    }
     const levels = {};
     for (const [alias, blob] of Object.entries(c.result)) {
       const m = /^e(\d+)$/.exec(alias);

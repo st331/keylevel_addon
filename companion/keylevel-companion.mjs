@@ -59,8 +59,23 @@ const CONFIG_TEMPLATE = {
   challengeMapIDs: {},
 };
 
+// numeric option with validation ( --recent 24 )
+function numArg(args, key, def) {
+  if (args[key] === undefined) return def;
+  const n = Number(args[key]);
+  if (!Number.isFinite(n) || args[key] === true) die(`--${key} needs a number`);
+  return n;
+}
+
+function configPathFrom(args) {
+  if (args.config !== undefined && typeof args.config !== "string") {
+    die("--config needs a path");
+  }
+  return path.resolve(args.config ?? path.join(HERE, "config.json"));
+}
+
 function loadConfig(args) {
-  const configPath = path.resolve(args.config ?? path.join(HERE, "config.json"));
+  const configPath = configPathFrom(args);
   if (!fs.existsSync(configPath)) {
     die(`no config at ${configPath} — run: node keylevel-companion.mjs init`);
   }
@@ -86,10 +101,20 @@ function die(msg) {
 
 function loadDb(cfg) {
   const p = path.resolve(cfg._dir, cfg.dbPath);
+  let parsed = null;
   if (fs.existsSync(p)) {
-    try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { /* corrupt -> fresh */ }
+    try { parsed = JSON.parse(fs.readFileSync(p, "utf8")); } catch { /* corrupt -> fresh */ }
   }
-  return { model: { meta: {}, dungeons: {}, players: {} }, realmSlugCache: {}, zoneCache: null };
+  // tolerate hand-edited / partial db files: merge over the skeleton
+  return {
+    model: {
+      meta: parsed?.model?.meta ?? {},
+      dungeons: parsed?.model?.dungeons ?? {},
+      players: parsed?.model?.players ?? {},
+    },
+    realmSlugCache: parsed?.realmSlugCache ?? {},
+    zoneCache: parsed?.zoneCache ?? null,
+  };
 }
 
 function saveDb(cfg, db) {
@@ -99,8 +124,8 @@ function saveDb(cfg, db) {
 
 // ---------------------------------------------------------------- commands
 
-async function cmdInit() {
-  const p = path.join(HERE, "config.json");
+async function cmdInit(args) {
+  const p = configPathFrom(args);
   if (fs.existsSync(p)) die(`config already exists: ${p}`);
   fs.writeFileSync(p, JSON.stringify(CONFIG_TEMPLATE, null, 2) + "\n");
   console.log(`wrote ${p}`);
@@ -128,7 +153,7 @@ function resolveNames(cfg, args) {
   } else if (args.sv) {
     const text = fs.readFileSync(path.resolve(args.sv), "utf8");
     const entries = extractSeenApplicants(text);
-    const hours = args.recent !== undefined ? Number(args.recent) : 24;
+    const hours = numArg(args, "recent", 24);
     names = recentNames(entries, hours);
     console.log(`SavedVariables: ${entries.length} known applicants, ${names.length} seen in the last ${hours}h`);
   } else if (Array.isArray(cfg.names)) {
@@ -149,7 +174,8 @@ async function resolveZone(cfg, ctx, db, args) {
   }
   const zones = await listZones(ctx);
   const zone = cfg.zoneID ? zones.find((z) => z.id === cfg.zoneID) : guessMythicPlusZone(zones);
-  if (!zone) die(cfg.zoneID ? `zone ${cfg.zoneID} not found` : "could not auto-detect the current M+ zone — run 'zones' and set zoneID in config.json");
+  // WclError, not die(): watch mode must survive fetch-path failures
+  if (!zone) throw new WclError(cfg.zoneID ? `zone ${cfg.zoneID} not found` : "could not auto-detect the current M+ zone — run 'zones' and set zoneID in config.json");
   db.zoneCache = { id: zone.id, name: zone.name, encounters: zone.encounters ?? [] };
   console.log(`zone: ${zone.id} (${zone.name}), ${db.zoneCache.encounters.length} dungeons`);
   return db.zoneCache;
@@ -188,6 +214,7 @@ async function fetchWithSlugRetry(cfg, ctx, db, chars, encounters) {
         nextRound.push({ ...r, tried: r.tried + 1, result: null });
       } else {
         console.warn(`not found on WCL: ${r.key} (tried slugs: ${r.candidates.join(", ")})`);
+        found.push({ ...r, result: null }); // recorded as missing in the data file
       }
     }
     round = nextRound;
@@ -195,18 +222,50 @@ async function fetchWithSlugRetry(cfg, ctx, db, chars, encounters) {
   return found;
 }
 
+function writeDataLua(cfg, db) {
+  const outPath = path.resolve(cfg._dir, cfg.outPath);
+  fs.writeFileSync(outPath, generateDataLua(db.model));
+  return outPath;
+}
+
 async function fetchOnce(cfg, args) {
   const chars = resolveNames(cfg, args);
-  if (chars.length === 0) die("no names to fetch — pass --names \"Foo-Area52,...\" or --sv <SavedVariables/KeyLevelLogs.lua>");
-  console.log(`fetching ${chars.length} character(s) ...`);
+  if (chars.length === 0) {
+    if (args.sv) {
+      // normal in watch mode / fresh installs: nothing to do yet
+      console.log("no applicants to fetch yet — waiting");
+      return;
+    }
+    throw new WclError("no names to fetch — pass --names \"Foo-Area52,...\" or --sv <SavedVariables/KeyLevelLogs.lua>");
+  }
+
+  const db = loadDb(cfg);
+
+  // players fetched recently are fresh enough; --max-age 0 or --force refetches
+  const maxAgeMin = numArg(args, "max-age", 30);
+  let toFetch = chars;
+  if (!args.force && maxAgeMin > 0) {
+    const cutoff = Math.floor(Date.now() / 1000) - maxAgeMin * 60;
+    toFetch = chars.filter((c) => {
+      const p = db.model.players[c.full];
+      return !(p && typeof p.updated === "number" && p.updated >= cutoff);
+    });
+    const skipped = chars.length - toFetch.length;
+    if (skipped > 0) console.log(`skipped ${skipped} character(s) fetched within the last ${maxAgeMin}m (--force to refetch)`);
+  }
+  if (toFetch.length === 0) {
+    const outPath = writeDataLua(cfg, db); // keep Data.lua in sync anyway
+    console.log(`nothing new to fetch — ${outPath} is current`);
+    return;
+  }
+  console.log(`fetching ${toFetch.length} character(s) ...`);
 
   const token = await getToken(cfg);
   const ctx = { token, apiUrl: cfg.apiUrl };
-  const db = loadDb(cfg);
   const zone = await resolveZone(cfg, ctx, db, args);
-  if (zone.encounters.length === 0) die(`zone ${zone.id} lists no encounters — try --refresh-zone`);
+  if (zone.encounters.length === 0) throw new WclError(`zone ${zone.id} lists no encounters — try --refresh-zone`);
 
-  const found = await fetchWithSlugRetry(cfg, ctx, db, chars, zone.encounters);
+  const found = await fetchWithSlugRetry(cfg, ctx, db, toFetch, zone.encounters);
 
   const now = Math.floor(Date.now() / 1000);
   const { players } = playersFromResults(found, now);
@@ -224,13 +283,11 @@ async function fetchOnce(cfg, args) {
     players,
   });
   saveDb(cfg, db);
+  const outPath = writeDataLua(cfg, db);
 
-  const outPath = path.resolve(cfg._dir, cfg.outPath);
-  fs.writeFileSync(outPath, generateDataLua(db.model));
-
-  for (const c of chars) {
+  for (const c of toFetch) {
     const p = db.model.players[c.full];
-    if (!p) { console.log(`  ${c.full}: no WCL character found`); continue; }
+    if (!p || p.missing) { console.log(`  ${c.full}: no WCL character found`); continue; }
     const lvls = Object.keys(p.levels).map(Number).sort((a, b) => a - b);
     console.log(`  ${c.full}: logged key levels: ${lvls.length ? lvls.map((l) => "+" + l).join(" ") : "(none)"}`);
   }
@@ -238,9 +295,9 @@ async function fetchOnce(cfg, args) {
 }
 
 async function cmdWatch(cfg, args) {
-  if (!args.sv) die("watch needs --sv <path to SavedVariables/KeyLevelLogs.lua>");
+  if (!args.sv || args.sv === true) die("watch needs --sv <path to SavedVariables/KeyLevelLogs.lua>");
   const svPath = path.resolve(args.sv);
-  const interval = Number(args.interval ?? 15);
+  const interval = Math.max(2, numArg(args, "interval", 15));
   console.log(`watching ${svPath} (checking every ${interval}s)`);
   console.log("flow: /reload in game -> companion fetches -> /reload again to see the data");
   let lastMtime = 0;
@@ -251,8 +308,10 @@ async function cmdWatch(cfg, args) {
     try {
       const st = fs.statSync(svPath);
       if (st.mtimeMs > lastMtime) {
-        lastMtime = st.mtimeMs;
+        // commit the mtime only after a successful fetch, so a transient
+        // failure (429, network) retries on the next tick
         await fetchOnce(cfg, args);
+        lastMtime = st.mtimeMs;
       }
     } catch (e) {
       if (e.code !== "ENOENT") console.error("watch error:", e.message);
@@ -290,7 +349,7 @@ const args = parseArgs(process.argv.slice(2));
 const cmd = args._[0] ?? "help";
 
 try {
-  if (cmd === "init") await cmdInit();
+  if (cmd === "init") await cmdInit(args);
   else if (cmd === "zones") await cmdZones(loadConfig(args));
   else if (cmd === "fetch") await fetchOnce(loadConfig(args), args);
   else if (cmd === "watch") await cmdWatch(loadConfig(args), args);
@@ -310,7 +369,9 @@ commands:
 
 common options:
   --config <path>            config file (default: companion/config.json)
-  --refresh-zone             re-query the zone/dungeon list`);
+  --refresh-zone             re-query the zone/dungeon list
+  --max-age <minutes>        skip players fetched more recently (default 30)
+  --force                    refetch even recently-fetched players`);
   }
 } catch (e) {
   if (e instanceof WclError) die(e.message);

@@ -1,5 +1,8 @@
 -- fixture_data.lua — a realistic KeyLevelLogsData for tests.
 -- Encounter IDs are arbitrary but stable within the tests.
+-- The mock clock starts at 1750000000; `updated` ages are relative to that.
+
+local NOW = 1750000000
 
 return {
   meta = {
@@ -14,10 +17,10 @@ return {
     [62290] = { name = "Mists of Tirna Scithe" }, -- intentionally no challengeMapID: exercises name matching
   },
   players = {
-    -- has the exact dungeon at the exact level
+    -- has the exact dungeon at the exact level; data is fresh
     ["Alice-TestRealm"] = {
       class = "MAGE",
-      updated = 1752000000,
+      updated = NOW - 10000,
       levels = {
         [12] = { best = 91.2, runs = 2, dungeons = {
           [12660] = { pct = 91.2, spec = "Fire" },
@@ -29,10 +32,11 @@ return {
         } },
       },
     },
-    -- has the level (elsewhere) but only one-below for the target dungeon
+    -- has the level (elsewhere) but only one-below for the target dungeon;
+    -- data is 5 days old (exercises the age tag)
     ["Bob-TestRealm"] = {
       class = "WARRIOR",
-      updated = 1752000000,
+      updated = NOW - 5 * 86400,
       levels = {
         [12] = { best = 77.0, runs = 1, dungeons = {
           [12669] = { pct = 77.0, spec = "Protection" },
@@ -45,7 +49,7 @@ return {
     -- nothing at level or level-1; best is far below
     ["Carol-TestRealm"] = {
       class = "PRIEST",
-      updated = 1752000000,
+      updated = NOW - 30 * 86400,
       levels = {
         [9] = { best = 55.5, runs = 1, dungeons = {
           [12660] = { pct = 55.5, spec = "Discipline" },
@@ -55,12 +59,17 @@ return {
     -- great at the level, but never logged the target dungeon at all
     ["Eve-OtherRealm"] = {
       class = "DRUID",
-      updated = 1752000000,
+      updated = NOW - 10000,
       levels = {
         [12] = { best = 99.5, runs = 1, dungeons = {
           [62290] = { pct = 99.5, spec = "Restoration" },
         } },
       },
+    },
+    -- fetched by the companion, but no such character on Warcraft Logs
+    ["Nolan-TestRealm"] = {
+      missing = true,
+      updated = NOW - 10000,
     },
   },
 }

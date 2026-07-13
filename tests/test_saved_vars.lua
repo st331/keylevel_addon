@@ -60,7 +60,7 @@ mock.SetApplicants({ { applicantID = 1, members = { { name = "Alice", class = "M
 mock.FireEvent("LFG_LIST_APPLICANT_LIST_UPDATED")
 mock.Advance(0.5) -- must not error
 T.eq(#ns.applicants, 1, "applicants still tracked without data")
-T.contains(ns.UI.rows[1].any:GetText(), "no data", "renders no-data state")
+T.contains(ns.UI.rows[1].any:GetText(), "not fetched", "renders not-fetched state")
 T.contains(ns.UI.context:GetText(), "no data file", "warns about missing data")
 
 T.group("placeholder Data.lua (fresh install, shipped file)")

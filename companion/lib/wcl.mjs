@@ -49,9 +49,13 @@ export async function gql({ token, query, variables, apiUrl = DEFAULT_API_URL, f
     throw new WclError(`GraphQL HTTP ${res.status}: ${await safeText(res)}`);
   }
   const json = await res.json();
-  if (json.errors?.length && !json.data) {
-    // partial data with per-field errors is fine (unknown characters etc.)
-    throw new WclError("GraphQL errors: " + json.errors.map((e) => e.message).join("; "));
+  if (json.errors?.length) {
+    // partial data with per-field errors is fine (unknown characters etc.),
+    // but surface the messages so a null result isn't misread as "not found"
+    if (!json.data) {
+      throw new WclError("GraphQL errors: " + json.errors.map((e) => e.message).join("; "));
+    }
+    console.warn("WCL API partial errors: " + json.errors.map((e) => e.message).join("; "));
   }
   return json.data;
 }

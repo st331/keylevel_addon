@@ -27,6 +27,17 @@ test("luaString escapes quotes/backslashes/newlines", () => {
   assert.equal(luaString('a"b\\c\nd'), '"a\\"b\\\\c\\nd"');
 });
 
+test("luaString NUL followed by digit uses 3-digit escape", () => {
+  assert.equal(luaString("a\x001b"), '"a\\0001b"');
+});
+
+test("non-canonical numeric strings stay string keys", () => {
+  const out = luaTable({ "012": 1, "-0": 2, 12: 3 });
+  assert.match(out, /\["012"\] = 1/, "leading zero stays a string key");
+  assert.match(out, /\["-0"\] = 2/, "-0 stays a string key");
+  assert.match(out, /\[12\] = 3/, "canonical number bracketed");
+});
+
 test("numeric keys are bracketed, identifiers bare, others quoted", () => {
   const out = luaTable({ 12: 1, name: 2, "Foo-Bar": 3, ["end"]: 4 });
   assert.match(out, /\[12\] = 1/);

@@ -5,26 +5,42 @@ Mythic+ listing, their **Warcraft Logs percentile for the key level you are
 running** — in a small movable window, with an explicit indicator when they
 have no logs at that level.
 
-For each applicant you see two things, mirroring how you'd vet them on the
+For each applicant you see three things, mirroring how you'd vet them on the
 website:
 
 | Column | Meaning |
 |---|---|
+| **Rating** | Their in-game M+ rating (comes free with the application — works even before any Warcraft Logs data is fetched) |
 | **Any dungeon @+12** | Their best percentile at exactly your key level, across all dungeons this season (with how many dungeons they've logged at that level) |
-| **This dungeon +12/+11** | Their percentile for *your* dungeon at your level — or, if they've never done it at that level, at **one level below**, clearly marked "(one below)" |
+| **This dungeon (want +12)** | Their percentile for *your* dungeon: at your level (`91% @+12`), at a higher level if that's what they've logged (`92% @+14 (higher)` — a higher clear counts at least as much), or **one level below** (`76% @+11 (one below)`) |
 
-If neither exists you get `no recent · best +9: 55%` (their best logged level
-for that dungeon) or `never logged`. Players with no Warcraft Logs data at
-all show `no data`. Rows are sorted best-first and class-colored, and
-percentiles use the familiar Warcraft Logs colors (gray → green → blue →
-purple → orange → pink → gold).
+If none of those exist you get `only lower · best +9: 55%` (their best logged
+level for that dungeon) or `never logged`. The window distinguishes
+`not fetched — /kll copy` (the companion hasn't looked this player up yet)
+from `no WCL character` (looked up — they simply don't log). Data older than
+two days gets a gray age tag next to the name, e.g. `Bob (5d)`. Rows are
+sorted best-first and class-colored, and percentiles use the familiar
+Warcraft Logs colors (gray → green → blue → purple → orange → pink → gold).
 
 ## How it works (important!)
 
 WoW addons **cannot access the internet** — the Lua sandbox has no network
-API. Every addon that shows web data in game (Raider.IO, Warcraft Logs' own
-Archon Tooltip) ships that data as files written by a program running
-outside the game, and the game re-reads those files on `/reload`.
+API. Every addon that shows web data in game ships that data as files
+written by a program running outside the game, and the game re-reads those
+files on `/reload`:
+
+- **Warcraft Logs' Archon Tooltip** looks real-time but isn't: the Warcraft
+  Logs Uploader desktop app writes `db_*.lua` database files into the
+  `ArchonTooltip` addon folder — refreshed **weekly** for free users, daily
+  for subscribers. Warcraft Logs can pre-ship *every* character because they
+  generate the export server-side from their own database.
+- **Raider.IO** ships whole-region score databases as `RaiderIO_DB_*` addon
+  folders, rewritten by its desktop client up to a few times per day.
+
+A third-party tool like this one can't bulk-export Warcraft Logs (the public
+API is rate-limited per client), so KeyLevelLogs fetches exactly the players
+who apply to your groups instead — fresher data for the people you actually
+care about, seconds after they apply.
 
 KeyLevelLogs works the same way, with two parts:
 
@@ -115,17 +131,22 @@ applicant names ready to paste into that command.
 | `/kll reset` | reset window position |
 | `/kll status` | show current context + data file stats |
 
-The window is movable (drag anywhere on it), remembers its position, and can
-be closed with its X — it will stay hidden until you `/kll show`.
+The recruiting context is picked in this order: your manual override, then
+the group you actually have **listed** (dungeon from the activity, key level
+parsed from a "+13" in your listing title), then your own keystone.
+
+The window is movable (drag anywhere on it) and remembers its position. It
+pops up when applicants arrive; its X button snoozes it for the current
+batch of applicants only, while `/kll hide` turns it off until you
+`/kll show` again.
 
 ### Playing nice with other addons
 
 KeyLevelLogs never touches the Blizzard group-finder frames, never hooks
 other addons, and never calls protected LFG functions — it only *reads* the
 applicant list in response to events and draws its own standalone window.
-It is verified conflict-free by design with Premade Groups Filter (which
-only modifies the *search results* side of the group finder, not the
-applicant side).
+By design it has zero overlap with Premade Groups Filter, which modifies
+only the *search results* side of the group finder, not the applicant side.
 
 ## Testing without the game
 
@@ -173,8 +194,17 @@ scripts/test.sh          run everything
   If a percentile ever looks off compared to the website, run
   `node keylevel-companion.mjs probe --names "Name-Realm"` and open an issue
   with the output.
-- A player who doesn't log their runs will show `no data` even if they're
-  experienced — same as when you check the website manually.
+- A player who doesn't log their runs will show `no WCL character` (or thin
+  data) even if they're experienced — same as when you check the website
+  manually. Data is also strictly per character: a known player applying on
+  a fresh alt looks like a new player, exactly as on the website.
 - Data is a snapshot: numbers update when the companion fetches, not live.
+  Rows show a gray age tag (e.g. `(5d)`) when a player's data is older than
+  two days; re-run the companion (or let watch mode do it) to refresh.
 - The WCL API allows 3,600 points/hour (free tier) — plenty for a night of
-  key-running; the companion batches queries and caches aggressively.
+  key-running. The companion skips players fetched within the last 30
+  minutes (`--max-age <minutes>` to tune, `--force` to override), caches the
+  zone/dungeon list and realm slugs, and batches characters per request.
+- Corporate/VPN proxies: the companion uses Node's built-in fetch, which
+  ignores `HTTP(S)_PROXY` environment variables. Run it on a normal home
+  connection.
