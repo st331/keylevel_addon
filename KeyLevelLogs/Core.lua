@@ -1,11 +1,20 @@
--- Core.lua — data lookup, applicant tracking, slash commands.
--- KeyLevelLogs deliberately never touches Blizzard's LFG frames or any other
--- addon's frames (e.g. Premade Groups Filter): it only *reads* C_LFGList data
--- in response to events and renders into its own standalone window.
+-- Core.lua — applicant tracking, lookup-URL building, slash commands.
+--
+-- KeyLevelLogs collects the names of players applying to your Mythic+
+-- listing and hands them to the companion website (one click: Copy URL,
+-- paste in browser). WoW addons have no network access, so the website —
+-- not the addon — talks to Warcraft Logs.
+--
+-- The addon deliberately never touches Blizzard's LFG frames or any other
+-- addon's frames (e.g. Premade Groups Filter): it only *reads* C_LFGList
+-- data in response to events and renders into its own standalone window.
 
 local ADDON_NAME, ns = ...
 
-ns.VERSION = "0.1.0"
+ns.VERSION = "0.2.0"
+
+-- The GitHub Pages site this repo ships (override with /kll site <url>)
+ns.DEFAULT_SITE_URL = "https://st331.github.io/keylevel_addon/"
 
 -- Midnight (12.0) can hand addons "secret" values in some contexts; treat
 -- them as unusable. issecretvalue does not exist on older clients.
@@ -18,50 +27,11 @@ end
 ns.IsUsableValue = usable
 
 --------------------------------------------------------------------------
--- Percentile colors (Warcraft Logs tiers)
---------------------------------------------------------------------------
-
-ns.PERCENTILE_COLORS = {
-  { min = 100, hex = "e5cc80" }, -- gold
-  { min = 99,  hex = "e268a8" }, -- pink
-  { min = 95,  hex = "ff8000" }, -- orange
-  { min = 75,  hex = "a335ee" }, -- purple
-  { min = 50,  hex = "0070ff" }, -- blue
-  { min = 25,  hex = "1eff00" }, -- green
-  { min = 0,   hex = "9d9d9d" }, -- gray
-}
-
-function ns.ColorForPercent(pct)
-  for _, tier in ipairs(ns.PERCENTILE_COLORS) do
-    if pct >= tier.min then return tier.hex end
-  end
-  return "9d9d9d"
-end
-
--- "84" colored like Warcraft Logs does (percentiles are floored for display).
-function ns.FormatPercent(pct)
-  local shown = math.floor(pct)
-  return ("|cff%s%d|r"):format(ns.ColorForPercent(shown), shown)
-end
-
-ns.GRAY = "|cff808080%s|r"
-
--- "5d" marker for player data older than 48 hours; nil when fresh/unknown.
-function ns.AgeTag(updated)
-  if type(updated) ~= "number" then return nil end
-  local age = time() - updated
-  if age < 48 * 3600 then return nil end
-  local days = math.floor(age / 86400)
-  if days > 99 then return "99d+" end
-  return days .. "d"
-end
-
---------------------------------------------------------------------------
 -- Names
 --------------------------------------------------------------------------
 
--- Applicants on your own realm arrive without "-Realm"; normalize so keys
--- always match the companion's "Name-NormalizedRealm" format.
+-- Applicants on your own realm arrive without "-Realm"; normalize so the
+-- website always receives fully-qualified "Name-NormalizedRealm".
 function ns.NormalizeName(name)
   if not name or name == "" then return nil end
   local char, realm = name:match("^([^%-]+)%-(.+)$")
@@ -96,80 +66,43 @@ function ns.ClassColor(name, class)
   return name
 end
 
-local function simplify(name)
-  return (name:lower():gsub("[^%w]", ""))
-end
+ns.GRAY = "|cff808080%s|r"
 
 --------------------------------------------------------------------------
--- Data access
+-- Region / URL building
 --------------------------------------------------------------------------
 
-local EMPTY_DATA = { meta = {}, dungeons = {}, players = {} }
+local REGIONS = { "us", "kr", "eu", "tw", "cn" }
 
-function ns.GetData()
-  local data = _G.KeyLevelLogsData
-  if type(data) ~= "table" or type(data.players) ~= "table" then
-    return EMPTY_DATA
-  end
-  return data
+function ns.RegionSlug()
+  local id = GetCurrentRegion and GetCurrentRegion() or 1
+  return REGIONS[id] or "us"
 end
 
-function ns.HasData()
-  return next(ns.GetData().players) ~= nil
+-- percent-encode everything outside RFC 3986 unreserved (byte-wise: safe
+-- for UTF-8 names)
+function ns.URLEncode(s)
+  return (s:gsub("[^%w%-%._~]", function(c)
+    return ("%%%02X"):format(c:byte())
+  end))
 end
 
-function ns.LookupPlayer(fullName)
-  return ns.GetData().players[fullName]
-end
-
--- Map an in-game challenge map ID to the WCL encounter ID in our data file,
--- by explicit mapping first, then by (simplified) name.
-function ns.EncounterForMap(mapID)
-  if not mapID then return nil end
-  local dungeons = ns.GetData().dungeons or {}
-  for encID, d in pairs(dungeons) do
-    if d.challengeMapID == mapID then
-      return encID, d.name
-    end
+-- Full lookup URL for the website: names + your current recruiting context.
+function ns.BuildLookupURL(names)
+  local base = (ns.db and ns.db.siteURL) or ns.DEFAULT_SITE_URL
+  local ctx = ns.GetContext()
+  local params = { "region=" .. ns.RegionSlug() }
+  if ctx.level then
+    params[#params + 1] = "level=" .. ctx.level
   end
-  local mapName = C_ChallengeMode and C_ChallengeMode.GetMapUIInfo and C_ChallengeMode.GetMapUIInfo(mapID)
-  if mapName then
-    local target = simplify(mapName)
-    for encID, d in pairs(dungeons) do
-      if d.name and simplify(d.name) == target then
-        return encID, d.name
-      end
-    end
+  if ctx.dungeonName then
+    params[#params + 1] = "dungeon=" .. ns.URLEncode(ctx.dungeonName)
   end
-  return nil
-end
-
-function ns.EncounterByName(text)
-  if not text or text == "" then return nil end
-  local target = simplify(text)
-  if target == "" then return nil end
-  -- Partial matches go both ways: "ara-kara" should find the dungeon, and an
-  -- activity fullName like "Ara-Kara, City of Echoes (Mythic Keystone)"
-  -- should too. Ambiguity is resolved deterministically: prefix matches
-  -- beat substring matches, then the longest dungeon name wins.
-  local best, bestName, bestScore
-  for encID, d in pairs(ns.GetData().dungeons or {}) do
-    if d.name then
-      local s = simplify(d.name)
-      if s == target then return encID, d.name end
-      local score
-      if s:find(target, 1, true) == 1 or target:find(s, 1, true) == 1 then
-        score = 2000 + #s
-      elseif s:find(target, 1, true) or target:find(s, 1, true) then
-        score = 1000 + #s
-      end
-      if score and (not bestScore or score > bestScore
-        or (score == bestScore and d.name < (bestName or ""))) then
-        best, bestName, bestScore = encID, d.name, score
-      end
-    end
-  end
-  return best, bestName
+  local enc = {}
+  for i, n in ipairs(names) do enc[i] = ns.URLEncode(n) end
+  params[#params + 1] = "chars=" .. table.concat(enc, ",")
+  local sep = base:find("?", 1, true) and "&" or "?"
+  return base .. sep .. table.concat(params, "&")
 end
 
 --------------------------------------------------------------------------
@@ -177,14 +110,14 @@ end
 --------------------------------------------------------------------------
 
 -- Reads the group the player has listed in the group finder, if any.
--- Returns encounterID, dungeonName, keyLevel (level parsed from the
--- listing title, e.g. "AK +12 weekly"), any of which may be nil.
+-- Returns dungeonName, keyLevel (parsed from the listing title, e.g.
+-- "AK +12 weekly"), either may be nil.
 local function readActiveListing()
   if not (C_LFGList and C_LFGList.GetActiveEntryInfo) then return nil end
   local ok, entry = pcall(C_LFGList.GetActiveEntryInfo)
   if not ok or type(entry) ~= "table" then return nil end
 
-  local encID, dungeonName, level
+  local dungeonName, level
 
   local activityID = usable(entry.activityID) and entry.activityID or nil
   if not activityID and type(entry.activityIDs) == "table" then
@@ -194,7 +127,9 @@ local function readActiveListing()
   if activityID and C_LFGList.GetActivityInfoTable then
     local ok2, info = pcall(C_LFGList.GetActivityInfoTable, activityID)
     if ok2 and type(info) == "table" and usable(info.fullName) and type(info.fullName) == "string" then
-      encID, dungeonName = ns.EncounterByName(info.fullName)
+      -- "Ara-Kara, City of Echoes (Mythic Keystone)" -> drop the suffix
+      dungeonName = info.fullName:gsub("%s*%b()%s*$", "")
+      if dungeonName == "" then dungeonName = nil end
     end
   end
 
@@ -203,7 +138,7 @@ local function readActiveListing()
     level = lvl and tonumber(lvl) or nil
   end
 
-  return encID, dungeonName, level
+  return dungeonName, level
 end
 
 -- Priority — level: manual override > level in your listing's title > your
@@ -212,129 +147,22 @@ end
 -- it beats the keystone you happen to be holding.
 function ns.GetContext()
   local db = ns.db or {}
-  local listingEnc, listingName, listingLevel = readActiveListing()
+  local listingDungeon, listingLevel = readActiveListing()
 
   local level = db.keyLevelOverride or listingLevel
     or (C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel and C_MythicPlus.GetOwnedKeystoneLevel())
   if level == 0 then level = nil end
 
-  local encID, dungeonName, mapID
-  if db.dungeonOverride then
-    mapID = db.dungeonOverride
-    encID, dungeonName = ns.EncounterForMap(mapID)
-    if not dungeonName and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
+  local dungeonName = db.dungeonOverride or listingDungeon
+  if not dungeonName then
+    local mapID = C_MythicPlus and C_MythicPlus.GetOwnedKeystoneChallengeMapID
+      and C_MythicPlus.GetOwnedKeystoneChallengeMapID() or nil
+    if mapID and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
       dungeonName = C_ChallengeMode.GetMapUIInfo(mapID)
     end
   end
-  if not encID and listingEnc then
-    encID, dungeonName = listingEnc, listingName
-  end
-  if not encID then
-    local keystoneMap = C_MythicPlus and C_MythicPlus.GetOwnedKeystoneChallengeMapID
-      and C_MythicPlus.GetOwnedKeystoneChallengeMapID() or nil
-    if keystoneMap then
-      mapID = keystoneMap
-      encID, dungeonName = ns.EncounterForMap(keystoneMap)
-      if not dungeonName and C_ChallengeMode and C_ChallengeMode.GetMapUIInfo then
-        dungeonName = C_ChallengeMode.GetMapUIInfo(keystoneMap)
-      end
-    end
-  end
 
-  return { level = level, mapID = mapID, encounterID = encID, dungeonName = dungeonName }
-end
-
---------------------------------------------------------------------------
--- Evaluation — the core "how are their logs for this key level" question.
---------------------------------------------------------------------------
-
--- Pure function; takes the player's data table (may be nil) plus the target
--- encounter/level, returns a structured verdict the UI renders:
---   status        "NO_PLAYER" (not in the data file — companion hasn't
---                 fetched them) | "NO_WCL" (fetched, but no such character
---                 on Warcraft Logs) | "OK"
---   anyAtLevel    { pct, runs }            best percentile at exactly this key
---                                          level, across all dungeons
---   dungeon       { pct, level, spec, kind } this dungeon: kind "exact" (at
---                 the level), "above" (nearest higher level — counts at
---                 least as much), or "below" (one level below)
---   dungeonBest   { pct, level }           best logged level for this dungeon,
---                                          when `dungeon` is nil
---   anyBest       { pct, level }           highest key level with any logs,
---                                          when `anyAtLevel` is nil
-function ns.Evaluate(playerData, encounterID, keyLevel)
-  if type(playerData) ~= "table" then
-    return { status = "NO_PLAYER" }
-  end
-  if playerData.missing then
-    return { status = "NO_WCL" }
-  end
-  if type(playerData.levels) ~= "table" then
-    return { status = "NO_PLAYER" }
-  end
-  local levels = playerData.levels
-  local result = { status = "OK" }
-
-  if keyLevel then
-    local atLevel = levels[keyLevel]
-    if atLevel and atLevel.best then
-      result.anyAtLevel = { pct = atLevel.best, runs = atLevel.runs or 0 }
-    end
-
-    if encounterID then
-      local exact = atLevel and atLevel.dungeons and atLevel.dungeons[encounterID]
-      if exact then
-        result.dungeon = { pct = exact.pct, level = keyLevel, spec = exact.spec, kind = "exact" }
-      else
-        -- a run at a higher level counts at least as much as one at level
-        local aboveLevel
-        for level, entry in pairs(levels) do
-          if level > keyLevel and entry.dungeons and entry.dungeons[encounterID] then
-            if not aboveLevel or level < aboveLevel then aboveLevel = level end
-          end
-        end
-        if aboveLevel then
-          local d = levels[aboveLevel].dungeons[encounterID]
-          result.dungeon = { pct = d.pct, level = aboveLevel, spec = d.spec, kind = "above" }
-        else
-          local below = levels[keyLevel - 1]
-          local fb = below and below.dungeons and below.dungeons[encounterID]
-          if fb then
-            result.dungeon = { pct = fb.pct, level = keyLevel - 1, spec = fb.spec, kind = "below" }
-          end
-        end
-      end
-    end
-  end
-
-  -- Best logged level for this dungeon (context when there is no direct hit).
-  if encounterID and not result.dungeon then
-    local bestLevel, bestPct
-    for level, entry in pairs(levels) do
-      local d = entry.dungeons and entry.dungeons[encounterID]
-      if d and (not bestLevel or level > bestLevel) then
-        bestLevel, bestPct = level, d.pct
-      end
-    end
-    if bestLevel then
-      result.dungeonBest = { level = bestLevel, pct = bestPct }
-    end
-  end
-
-  -- Highest key level with any logs at all.
-  if not result.anyAtLevel then
-    local bestLevel, bestPct
-    for level, entry in pairs(levels) do
-      if entry.best and (not bestLevel or level > bestLevel) then
-        bestLevel, bestPct = level, entry.best
-      end
-    end
-    if bestLevel then
-      result.anyBest = { level = bestLevel, pct = bestPct }
-    end
-  end
-
-  return result
+  return { level = level, dungeonName = dungeonName }
 end
 
 --------------------------------------------------------------------------
@@ -346,6 +174,7 @@ local DEFAULTS = {
   autoShow = true,
   keyLevelOverride = nil,
   dungeonOverride = nil,
+  siteURL = nil,
   seenApplicants = {},
 }
 
@@ -427,6 +256,23 @@ function ns.RefreshApplicants()
   if ns.UI and ns.UI.Refresh then ns.UI:Refresh() end
 end
 
+-- Current applicant names; falls back to applicants seen in the last hour
+-- (e.g. you just closed the listing but still want the lookup).
+function ns.NamesForLookup()
+  local names = {}
+  for _, app in ipairs(ns.applicants) do
+    names[#names + 1] = app.name
+  end
+  if #names == 0 and ns.db then
+    local cutoff = time() - 3600
+    for name, info in pairs(ns.db.seenApplicants) do
+      if (info.lastSeen or 0) >= cutoff then names[#names + 1] = name end
+    end
+    table.sort(names)
+  end
+  return names
+end
+
 -- Coalesce event bursts into one refresh.
 local pendingRefresh = false
 function ns.QueueRefresh()
@@ -476,16 +322,13 @@ end
 
 local function slashStatus()
   local ctx = ns.GetContext()
-  local data = ns.GetData()
-  local players = 0
-  for _ in pairs(data.players) do players = players + 1 end
-  ns.Print(("key level: %s%s, dungeon: %s%s"):format(
+  ns.Print(("key level: %s%s, dungeon: %s%s, region: %s"):format(
     ctx.level and ("+" .. ctx.level) or "unknown",
     ns.db.keyLevelOverride and " (manual)" or "",
     ctx.dungeonName or "unknown",
-    ns.db.dungeonOverride and " (manual)" or ""))
-  ns.Print(("data file: %d player(s), generated %s"):format(
-    players, tostring(data.meta and data.meta.generatedAt or "never")))
+    ns.db.dungeonOverride and " (manual)" or "",
+    ns.RegionSlug()))
+  ns.Print(("lookup site: %s"):format((ns.db and ns.db.siteURL) or ns.DEFAULT_SITE_URL))
 end
 
 function ns.HandleSlash(input)
@@ -519,24 +362,24 @@ function ns.HandleSlash(input)
       ns.db.dungeonOverride = nil
       ns.Print("dungeon override cleared")
     else
-      local encID, name = ns.EncounterByName(rest)
-      local mapID
-      if encID then
-        local d = ns.GetData().dungeons[encID]
-        mapID = d and d.challengeMapID
-      end
-      if encID and mapID then
-        ns.db.dungeonOverride = mapID
-        ns.Print(("dungeon set to %s"):format(name))
-      elseif encID then
-        ns.Print(("matched %s in the data file, but it has no challenge map id; update the companion mapping"):format(name or rest))
-      else
-        ns.Print(("no dungeon matching '%s' in the data file"):format(rest))
-      end
+      ns.db.dungeonOverride = rest
+      ns.Print(("dungeon set to %s"):format(rest))
     end
     if ns.UI then ns.UI:Refresh() end
-  elseif cmd == "copy" then
-    if ns.UI then ns.UI:ShowCopyBox() end
+  elseif cmd == "site" then
+    if rest == "" or rest:lower() == "default" then
+      ns.db.siteURL = nil
+      ns.Print("lookup site reset to " .. ns.DEFAULT_SITE_URL)
+    elseif rest:match("^https?://") then
+      ns.db.siteURL = rest
+      ns.Print("lookup site set to " .. rest)
+    else
+      ns.Print("usage: /kll site https://you.github.io/keylevel_addon/  (or /kll site default)")
+    end
+  elseif cmd == "copy" or cmd == "url" then
+    if ns.UI then ns.UI:ShowCopyBox("url") end
+  elseif cmd == "names" then
+    if ns.UI then ns.UI:ShowCopyBox("names") end
   elseif cmd == "reset" then
     ns.db.window = nil
     ns.InitDB()
@@ -545,7 +388,7 @@ function ns.HandleSlash(input)
   elseif cmd == "status" then
     slashStatus()
   else
-    ns.Print("commands: /kll  |  /kll 12  |  /kll auto  |  /kll dungeon <name>  |  /kll copy  |  /kll reset  |  /kll status")
+    ns.Print("commands: /kll  |  /kll copy (URL)  |  /kll names  |  /kll 12  |  /kll dungeon <name>  |  /kll auto  |  /kll site <url>  |  /kll reset  |  /kll status")
   end
 end
 

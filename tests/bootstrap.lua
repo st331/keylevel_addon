@@ -15,7 +15,6 @@ local DEFAULT_MAPS = {
 
 -- opts:
 --   savedVars     value for _G.KeyLevelLogsDB before ADDON_LOADED (nil = fresh install)
---   data          KeyLevelLogsData table; false = keep shipped placeholder; nil = test fixture
 --   challengeMaps map id -> name table for C_ChallengeMode
 --   keystoneLevel / keystoneMapID  starting keystone
 --   skipLogin     don't fire the login events
@@ -30,15 +29,11 @@ function B.StartSession(opts)
   mock.state.keystoneMapID = opts.keystoneMapID
 
   _G.KeyLevelLogsDB = opts.savedVars
-  _G.KeyLevelLogsData = nil
   _G.KeyLevelLogsFrame = nil
   _G.KeyLevelLogsCopyFrame = nil
 
   local ns, directives = B.Loader.Load("KeyLevelLogs", "KeyLevelLogs")
 
-  if opts.data ~= false then
-    _G.KeyLevelLogsData = opts.data or dofile("tests/fixture_data.lua")
-  end
   if not opts.skipLogin then
     mock.SimulateLogin("KeyLevelLogs")
   end

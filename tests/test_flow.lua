@@ -1,10 +1,10 @@
--- test_flow.lua — end-to-end: LFG events -> applicant window contents,
--- slash commands, visibility, drag persistence, copy box.
+-- test_flow.lua — end-to-end: LFG events -> applicant window, copy box,
+-- slash commands, visibility, drag persistence.
 
 local B = _G.__B
 local T = B.T
 local mock = B.mock
-local ns = B.StartSession({})
+local ns = B.StartSession({ keystoneLevel = 12, keystoneMapID = 503 })
 
 local UI = ns.UI
 local frame = _G.KeyLevelLogsFrame
@@ -18,118 +18,90 @@ T.ok(frame._scripts.OnDragStart and frame._scripts.OnDragStop, "drag scripts wir
 T.ok(frame._backdrop ~= nil, "backdrop applied (BackdropTemplate)")
 T.ok(not frame:IsShown(), "starts hidden until applicants arrive")
 T.eq(_G.KeyLevelLogsCloseButton._template, "UIPanelCloseButton", "close button uses a real template")
-T.eq(_G.KeyLevelLogsCopyButton._template, "UIPanelButtonTemplate", "copy button uses a real template")
+T.eq(_G.KeyLevelLogsCopyURLButton._template, "UIPanelButtonTemplate", "copy-url button uses a real template")
+T.eq(_G.KeyLevelLogsCopyNamesButton._template, "UIPanelButtonTemplate", "names button uses a real template")
 
-T.group("context from own keystone")
-mock.state.keystoneLevel = 12
-mock.state.keystoneMapID = 503 -- Ara-Kara in fixtures
-local ctx = ns.GetContext()
-T.eq(ctx.level, 12, "level from keystone")
-T.eq(ctx.encounterID, 12660, "encounter resolved from challenge map")
-T.eq(ctx.dungeonName, "Ara-Kara, City of Echoes", "dungeon name resolved")
-
-T.group("context from active listing beats keystone")
-mock.state.activeEntry = { name = "LF healer +13 weekly", activityIDs = { 999 } }
-mock.state.activities = { [999] = { fullName = "City of Threads (Mythic Keystone)", isMythicPlusActivity = true } }
-ctx = ns.GetContext()
-T.eq(ctx.level, 13, "level parsed from listing title")
-T.eq(ctx.encounterID, 12669, "dungeon from the listing, not the keystone")
-T.eq(ctx.dungeonName, "City of Threads", "listing dungeon name")
-mock.state.activeEntry = nil
-mock.state.activities = nil
-ctx = ns.GetContext()
-T.eq(ctx.level, 12, "keystone again once listing is gone")
-T.eq(ctx.encounterID, 12660, "keystone dungeon again")
-
-T.group("applicants render")
+T.group("applicants render, sorted by rating")
 mock.SetApplicants({
-  { applicantID = 1, members = { { name = "Alice", class = "MAGE" } } },       -- same realm, bare name
+  { applicantID = 1, members = { { name = "Alice", class = "MAGE", dungeonScore = 3012 } } },
   { applicantID = 2, members = { { name = "Bob-TestRealm", class = "WARRIOR", dungeonScore = 2905 } } },
-  { applicantID = 3, members = { { name = "Dave-TestRealm", class = "ROGUE" } } }, -- not in data
-  { applicantID = 4, members = { { name = "Eve-OtherRealm", class = "DRUID" } } },
-  { applicantID = 5, members = { { name = "Nolan-TestRealm", class = "PALADIN" } } }, -- fetched, no WCL char
+  { applicantID = 3, members = { { name = "Eve-OtherRealm", class = "DRUID", dungeonScore = 3305 } } },
+  { applicantID = 4, members = { { name = "Norating-TestRealm", class = "ROGUE" } } },
 })
 mock.FireEvent("LFG_LIST_APPLICANT_LIST_UPDATED", true, true)
-mock.Advance(0.5) -- debounce timer
+mock.Advance(0.5)
 
-T.eq(#ns.applicants, 5, "five applicants tracked")
+T.eq(#ns.applicants, 4, "four applicants tracked")
 T.ok(frame:IsShown(), "auto-shown when applicants arrive")
-
--- Sorted: Eve any@12 99.5 > Alice AK@12 91.2 > Bob AK@11 76.4 > Dave/Nolan (no data)
-local r1, r2, r3 = UI.rows[1], UI.rows[2], UI.rows[3]
-T.contains(r1.name:GetText(), "Eve-OtherRealm", "row1: Eve (cross-realm keeps suffix)")
-T.contains(r1.any:GetText(), "99", "Eve any 99")
-T.contains(r1.dungeon:GetText(), "never logged", "Eve never logged this dungeon")
-
-T.contains(r2.name:GetText(), "Alice", "row2: Alice")
-T.not_contains(r2.name:GetText(), "Alice-TestRealm", "own realm hidden")
-T.contains(r2.name:GetText(), "3fc7eb", "class colored (mage)")
-T.not_contains(r2.name:GetText(), "(5d)", "fresh data: no age tag")
-T.contains(r2.any:GetText(), "91", "Alice any 91")
-T.contains(r2.any:GetText(), "2 dungeons", "run count shown")
-T.contains(r2.dungeon:GetText(), "91", "Alice AK 91")
-T.contains(r2.dungeon:GetText(), "@+12", "at the exact level")
-
-T.contains(r3.name:GetText(), "Bob", "row3: Bob")
-T.contains(r3.name:GetText(), "(5d)", "stale data flagged with age tag")
-T.contains(r3.score:GetText(), "2905", "in-game rating column")
-T.contains(r3.dungeon:GetText(), "76", "Bob fallback pct")
-T.contains(r3.dungeon:GetText(), "@+11", "fallback level shown")
-T.contains(r3.dungeon:GetText(), "one below", "fallback labelled")
-
--- last two rows: Dave (never fetched) and Nolan (fetched, missing) sort to the bottom
-local bottomAny = (UI.rows[4].any:GetText() or "") .. (UI.rows[5].any:GetText() or "")
-T.contains(bottomAny, "not fetched", "unfetched player labelled distinctly")
-T.contains(bottomAny, "no WCL character", "missing-on-WCL labelled distinctly")
-T.contains(UI.rows[4].score:GetText() or "", "—", "no rating shown as dash")
-
-T.group("seen applicants recorded for companion")
-local db = _G.KeyLevelLogsDB
-T.ok(db.seenApplicants["Alice-TestRealm"], "Alice recorded with normalized name")
-T.ok(db.seenApplicants["Eve-OtherRealm"], "Eve recorded")
-T.eq(db.seenApplicants["Alice-TestRealm"].class, "MAGE", "class recorded")
-
-T.group("header/context text")
+T.contains(UI.rows[1].name:GetText(), "Eve-OtherRealm", "row1: highest rating first, cross-realm suffix kept")
+T.contains(UI.rows[1].score:GetText(), "3305", "rating rendered")
+T.contains(UI.rows[2].name:GetText(), "Alice", "row2: Alice")
+T.not_contains(UI.rows[2].name:GetText(), "Alice-TestRealm", "own realm hidden")
+T.contains(UI.rows[2].name:GetText(), "3fc7eb", "class colored (mage)")
+T.contains(UI.rows[4].name:GetText(), "Norating", "unknown rating last")
+T.contains(UI.rows[4].score:GetText(), "—", "unknown rating shown as dash")
 T.contains(UI.context:GetText(), "+12", "context shows level")
 T.contains(UI.context:GetText(), "Ara-Kara", "context shows dungeon")
-T.contains(UI.headAny:GetText(), "+12", "any-column header shows level")
-T.contains(UI.headDungeon:GetText(), "want +12", "dungeon column states the target")
 
-T.group("copy box")
+T.group("seen applicants recorded")
+local db = _G.KeyLevelLogsDB
+T.ok(db.seenApplicants["Alice-TestRealm"], "Alice recorded with normalized name")
+T.eq(db.seenApplicants["Alice-TestRealm"].class, "MAGE", "class recorded")
+
+T.group("copy URL")
 mock.RunSlash("/kll copy")
 local copyFrame = _G.KeyLevelLogsCopyFrame
 T.ok(copyFrame and copyFrame:IsShown(), "copy frame shown")
-local text = copyFrame.edit:GetText()
-T.contains(text, "Alice-TestRealm", "copy has normalized Alice")
-T.contains(text, "Eve-OtherRealm", "copy has Eve")
+local url = copyFrame.edit:GetText()
+T.contains(url, "https://st331.github.io/keylevel_addon/?", "site url")
+T.contains(url, "region=us", "region")
+T.contains(url, "level=12", "level")
+T.contains(url, "chars=", "chars param")
+T.contains(url, "Alice-TestRealm", "Alice in url")
+T.contains(url, "Eve-OtherRealm", "Eve in url")
+T.contains(url, "Norating-TestRealm", "everyone included")
+T.contains(copyFrame.label:GetText(), "browser", "label explains the paste target")
 copyFrame:Hide()
 
-T.group("slash: level override")
-mock.RunSlash("/kll 13")
-T.eq(ns.db.keyLevelOverride, 13, "override stored")
-T.contains(UI.context:GetText(), "+13", "context reflects override")
--- at 13, Alice has nothing at/above; 12 is one below -> AK 91.2@+12
-T.contains(UI.rows[1].dungeon:GetText() .. UI.rows[2].dungeon:GetText(), "@+12", "fallback to +12 after override")
+T.group("copy names")
+mock.RunSlash("/kll names")
+T.ok(copyFrame:IsShown(), "copy frame reshown")
+local text = copyFrame.edit:GetText()
+T.contains(text, "Alice-TestRealm\n", "one name per line")
+T.not_contains(text, "https://", "names mode has no url")
+copyFrame:Hide()
+
+T.group("copy buttons on the window")
+_G.KeyLevelLogsCopyURLButton:Click()
+T.contains(copyFrame.edit:GetText(), "chars=", "URL button fills url")
+_G.KeyLevelLogsCopyNamesButton:Click()
+T.not_contains(copyFrame.edit:GetText(), "chars=", "Names button fills names")
+copyFrame:Hide()
+
+T.group("slash: level and dungeon overrides flow into the URL")
+mock.RunSlash("/kll 14")
+mock.RunSlash("/kll dungeon Mists of Tirna Scithe")
+mock.RunSlash("/kll copy")
+url = copyFrame.edit:GetText()
+T.contains(url, "level=14", "override level in url")
+T.contains(url, "dungeon=Mists%20of%20Tirna%20Scithe", "override dungeon in url")
+copyFrame:Hide()
+mock.RunSlash("/kll auto")
+mock.RunSlash("/kll copy")
+T.contains(copyFrame.edit:GetText(), "level=12", "auto restores keystone level")
+copyFrame:Hide()
+
+T.group("slash: site override")
+mock.RunSlash("/kll site https://example.com/kll/")
+mock.RunSlash("/kll copy")
+T.contains(copyFrame.edit:GetText(), "https://example.com/kll/?", "custom site in url")
+copyFrame:Hide()
+mock.RunSlash("/kll site default")
+T.is_nil(ns.db.siteURL, "site reset")
+
+T.group("slash: /kll 0 clears override")
 mock.RunSlash("/kll 0")
 T.is_nil(ns.db.keyLevelOverride, "/kll 0 clears instead of wedging context")
-mock.RunSlash("/kll 13")
-mock.RunSlash("/kll auto")
-T.is_nil(ns.db.keyLevelOverride, "auto clears override")
-T.contains(UI.context:GetText(), "+12", "back to keystone level")
-
-T.group("slash: dungeon override")
-mock.RunSlash("/kll dungeon city of threads")
-T.eq(ns.db.dungeonOverride, 502, "dungeon override stored (challenge map id)")
-T.contains(UI.context:GetText(), "City of Threads", "context shows override dungeon")
--- Bob has CoT 77 at +12 exactly
-local found = false
-for i = 1, 5 do
-  local cell = UI.rows[i].dungeon:GetText() or ""
-  if cell:find("77", 1, true) and cell:find("@+12", 1, true) then found = true end
-end
-T.ok(found, "Bob CoT 77@+12 rendered")
-mock.RunSlash("/kll dungeon clear")
-T.is_nil(ns.db.dungeonOverride, "dungeon override cleared")
 
 T.group("hide / show / auto-show")
 mock.RunSlash("/kll hide")
@@ -170,15 +142,16 @@ mock.RunSlash("/kll reset")
 T.eq(ns.db.window.point, "CENTER", "reset restores default point")
 T.eq(ns.db.window.x, 260, "reset restores default x")
 
-T.group("applicant departure")
+T.group("applicant departure keeps names available for copy")
 mock.SetApplicants({})
 mock.FireEvent("LFG_LIST_APPLICANT_LIST_UPDATED")
 mock.Advance(0.5)
 T.eq(#ns.applicants, 0, "applicants cleared")
 T.contains(UI.footer:GetText(), "No applicants", "empty state")
-for i = 1, 5 do
-  T.ok(not UI.rows[i].name:IsShown(), "row " .. i .. " hidden")
-end
+local names = ns.NamesForLookup()
+T.ok(#names > 0, "recently seen applicants still exported")
+local joined = table.concat(names, ",")
+T.contains(joined, "Alice-TestRealm", "Alice recoverable after leaving")
 
 T.group("many applicants overflow")
 local many = {}
@@ -190,27 +163,10 @@ mock.FireEvent("LFG_LIST_APPLICANT_LIST_UPDATED")
 mock.Advance(0.5)
 T.eq(#ns.applicants, 15, "15 tracked")
 T.contains(UI.footer:GetText(), "+3 more", "overflow reported (12 max rows)")
-
-T.group("no key level context")
-mock.SetApplicants({ { applicantID = 1, members = { { name = "Alice", class = "MAGE" } } } })
-mock.state.keystoneLevel = nil
-mock.state.keystoneMapID = nil
-mock.FireEvent("LFG_LIST_APPLICANT_LIST_UPDATED")
-mock.Advance(0.5)
-T.contains(UI.context:GetText(), "/kll 12", "hint to set level")
-T.contains(UI.rows[1].any:GetText(), "best:", "shows best level when no context")
-T.contains(UI.rows[1].any:GetText(), "+12", "best level value shown")
-mock.state.keystoneLevel = 12
-mock.state.keystoneMapID = 503
-
-T.group("no data file warning")
-local saved = _G.KeyLevelLogsData
-_G.KeyLevelLogsData = { meta = {}, dungeons = {}, players = {} }
-UI:Refresh()
-T.contains(UI.context:GetText(), "no data file", "warns when data empty")
-_G.KeyLevelLogsData = saved
-UI:Refresh()
-T.not_contains(UI.context:GetText(), "no data file", "warning clears with data")
+mock.RunSlash("/kll copy")
+local overflowURL = _G.KeyLevelLogsCopyFrame.edit:GetText()
+T.contains(overflowURL, "P15-TestRealm", "overflow applicants still in the URL")
+_G.KeyLevelLogsCopyFrame:Hide()
 
 T.group("multi-member applicant groups")
 mock.SetApplicants({

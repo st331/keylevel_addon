@@ -1,4 +1,4 @@
-// slugs.mjs — turn a WoW *normalized* realm name (as the addon exports it,
+// slugs.js — turn a WoW *normalized* realm name (as the addon exports it,
 // e.g. "Area52", "TwistingNether", "Kiljaeden") into candidate Warcraft Logs
 // server slugs, most likely first. WCL slugs are lowercase and use dashes at
 // word boundaries ("area-52", "twisting-nether") but plain concatenation for
@@ -24,10 +24,25 @@ export function slugCandidates(normalizedRealm, overrides = {}) {
   return out;
 }
 
-// "Name-Realm" -> { name, realm } ; bare names are rejected (the addon always
-// exports fully-qualified names).
+// "Name-Realm" -> { name, realm } ; bare names are rejected.
 export function parseFullName(full) {
   const m = /^([^-]+)-(.+)$/.exec(full.trim());
   if (!m) return null;
   return { name: m[1], realm: m[2] };
+}
+
+// Free-form pasted text (or the ?chars= param) -> unique full names.
+// Accepts commas, semicolons, whitespace/newlines as separators.
+export function parseNamesInput(text) {
+  const out = [];
+  const seen = new Set();
+  for (const piece of String(text ?? "").split(/[\s,;]+/)) {
+    const trimmed = piece.trim();
+    if (!trimmed || !trimmed.includes("-")) continue;
+    if (!seen.has(trimmed)) {
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  return out;
 }

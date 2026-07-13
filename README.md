@@ -1,210 +1,156 @@
 # KeyLevelLogs
 
-A World of Warcraft addon that shows, for every player applying to your
-Mythic+ listing, their **Warcraft Logs percentile for the key level you are
-running** — in a small movable window, with an explicit indicator when they
-have no logs at that level.
+Vet your Mythic+ applicants against Warcraft Logs in one paste.
 
-For each applicant you see three things, mirroring how you'd vet them on the
-website:
+Two parts:
+
+1. **A tiny WoW addon** — a movable window that lists everyone applying to
+   your group (with their in-game M+ rating) and gives you a one-click
+   **Copy URL** containing all their names plus your key level and dungeon.
+2. **A website on GitHub Pages** — paste that URL (or just names) and see,
+   for each applicant, their Warcraft Logs percentiles organized around the
+   question you actually ask: *how are their logs at the key level I'm
+   running?*
+
+For each character the site shows:
 
 | Column | Meaning |
 |---|---|
-| **Rating** | Their in-game M+ rating (comes free with the application — works even before any Warcraft Logs data is fetched) |
-| **Any dungeon @+12** | Their best percentile at exactly your key level, across all dungeons this season (with how many dungeons they've logged at that level) |
-| **This dungeon (want +12)** | Their percentile for *your* dungeon: at your level (`91% @+12`), at a higher level if that's what they've logged (`92% @+14 (higher)` — a higher clear counts at least as much), or **one level below** (`76% @+11 (one below)`) |
+| **Any dungeon @+12** | Best percentile at exactly your key level, across all dungeons this season (with how many dungeons they've logged at that level) |
+| **Your dungeon (want +12)** | Their log for *your* dungeon: at your level (`91% @+12`), at a higher level (`99% @+14 (higher)` — a higher clear counts at least as much), or one level below (`76% @+11 (one below)`) |
 
-If none of those exist you get `only lower · best +9: 55%` (their best logged
-level for that dungeon) or `never logged`. The window distinguishes
-`not fetched — /kll copy` (the companion hasn't looked this player up yet)
-from `no WCL character` (looked up — they simply don't log). Data older than
-two days gets a gray age tag next to the name, e.g. `Bob (5d)`. Rows are
-sorted best-first and class-colored, and percentiles use the familiar
-Warcraft Logs colors (gray → green → blue → purple → orange → pink → gold).
+If neither exists: `only lower · best +9: 55%` or `never logged`, and players
+with no Warcraft Logs presence at all show `no WCL character` — your explicit
+"no logs" indicator. Click any row for the full **dungeon × key level
+matrix** of their season. Percentiles use the Warcraft Logs color tiers
+(gray → green → blue → purple → orange → pink → gold), rows sort best-first.
 
-## How it works (important!)
+## How it works
 
-WoW addons **cannot access the internet** — the Lua sandbox has no network
-API. Every addon that shows web data in game ships that data as files
-written by a program running outside the game, and the game re-reads those
-files on `/reload`:
-
-- **Warcraft Logs' Archon Tooltip** looks real-time but isn't: the Warcraft
-  Logs Uploader desktop app writes `db_*.lua` database files into the
-  `ArchonTooltip` addon folder — refreshed **weekly** for free users, daily
-  for subscribers. Warcraft Logs can pre-ship *every* character because they
-  generate the export server-side from their own database.
-- **Raider.IO** ships whole-region score databases as `RaiderIO_DB_*` addon
-  folders, rewritten by its desktop client up to a few times per day.
-
-A third-party tool like this one can't bulk-export Warcraft Logs (the public
-API is rate-limited per client), so KeyLevelLogs fetches exactly the players
-who apply to your groups instead — fresher data for the people you actually
-care about, seconds after they apply.
-
-KeyLevelLogs works the same way, with two parts:
-
-1. **The addon** (`KeyLevelLogs/`) — tracks who applies to your group,
-   displays their numbers from its local data file (`Data.lua`), and records
-   applicant names so the companion knows who to look up.
-2. **The companion** (`companion/`) — a small Node.js tool that fetches
-   percentiles from the official Warcraft Logs API (using your own free API
-   key) and rewrites `Data.lua`.
-
-The loop while you're recruiting for a key:
+WoW addons cannot access the internet (the Lua sandbox has no network API —
+even Warcraft Logs' own Archon addon just reads files that their desktop app
+writes to disk on a weekly schedule). So the addon's job is only to *collect
+names*; the lookup happens in your browser, which calls the Warcraft Logs
+API directly — their API explicitly allows browser requests (CORS), and you
+use your own free API key, stored only in your browser.
 
 ```
-applicants show up  ->  /reload  (game saves the applicant names to disk)
-                        companion (in watch mode) sees them, fetches WCL data,
-                        rewrites Data.lua in a few seconds
-/reload again       ->  window now shows everyone's percentiles
+players apply  →  addon window pops up  →  click "Copy URL"
+→ paste in browser → percentiles, organized, in ~2 seconds
 ```
 
-You can also pre-load players any time with `fetch --names`, and everything
-the companion ever fetched stays in the data file, so frequently-seen
-players are often already there.
+No companion process, no /reload loop, no data files.
 
-## Installation
+## Setup
 
-### Addon
+### 1. Addon
 
-Copy (or symlink) the `KeyLevelLogs/` folder into
+Copy the `KeyLevelLogs/` folder into
 `World of Warcraft/_retail_/Interface/AddOns/`.
 
-### Companion
+### 2. Website
 
-Requires [Node.js](https://nodejs.org) 18+ (no npm packages needed).
+The site is static and lives in `docs/`. To host it under your account:
 
-```bash
-cd companion
-node keylevel-companion.mjs init
-```
+1. In this repo on GitHub: **Settings → Pages → Source: "Deploy from a
+   branch" → Branch: `main`, folder `/docs`** → Save.
+2. Your site appears at `https://<user>.github.io/keylevel_addon/` within a
+   minute or two.
 
-Then edit the generated `companion/config.json`:
+(If your Pages URL differs from the default baked into the addon, set it
+once in game: `/kll site https://<user>.github.io/keylevel_addon/`.)
 
-1. **API credentials**: create a (free) client at
-   <https://www.warcraftlogs.com/api/clients/> — any name, no redirect URL
-   needed. Put `clientId`/`clientSecret` in the config, or leave the
-   `env:...` values and export `WCL_CLIENT_ID` / `WCL_CLIENT_SECRET`.
-2. **`outPath`**: point it at your real addon folder, e.g.
-   `C:/Program Files (x86)/World of Warcraft/_retail_/Interface/AddOns/KeyLevelLogs/Data.lua`
-   (forward slashes work on Windows).
-3. **`region`**: `us`, `eu`, `kr`, or `tw`.
+### 3. Warcraft Logs API key (one time, ~1 minute)
 
-The current M+ season zone is auto-detected from the API; run
-`node keylevel-companion.mjs zones` to see it (set `zoneID` in the config to
-pin a specific season).
+1. Create a free API client at
+   [warcraftlogs.com/api/clients](https://www.warcraftlogs.com/api/clients/)
+   — any name, no redirect URL, leave "Public Client" unchecked.
+2. Open your site, expand **Setup**, paste the client id + secret, Save.
+   They are stored in your browser's localStorage only and sent only to
+   warcraftlogs.com.
 
-## Usage
+## Using it
 
-### Day-to-day
+1. List your key. When players apply, the addon window pops up (movable,
+   remembers its position, X snoozes it for the current batch, `/kll hide`
+   turns it off persistently).
+2. Click **Copy URL** (or `/kll copy`), Ctrl+C, paste into your browser.
+   The site reads the names, your key level, and your dungeon from the URL
+   and runs immediately.
+3. Read the table; click a row for the full matrix. Invite accordingly.
 
-Start the companion in watch mode, pointing it at the addon's saved
-variables (adjust account name):
+The **Names** button (`/kll names`) copies bare `Name-Realm` lines instead,
+for pasting into the site's textbox by hand.
 
-```bash
-node keylevel-companion.mjs watch --sv "<WoW>/_retail_/WTF/Account/<ACCOUNT>/SavedVariables/KeyLevelLogs.lua"
-```
-
-In game: list your key. When applications arrive, the window pops up.
-Anyone already in the data file shows numbers immediately; for the rest,
-`/reload` once (saves their names), wait a few seconds, `/reload` again.
-
-### Manual fetch
-
-```bash
-node keylevel-companion.mjs fetch --names "Playerone-Area52,Playertwo-TwistingNether"
-```
-
-In game, the **Copy** button (or `/kll copy`) opens a box with all current
-applicant names ready to paste into that command.
-
-### Slash commands
-
-| Command | Effect |
-|---|---|
-| `/kll` | toggle the window |
-| `/kll 12` | evaluate applicants as if recruiting for a +12 (otherwise your own keystone's level is used) |
-| `/kll auto` | back to following your keystone |
-| `/kll dungeon <name>` | evaluate against a specific dungeon (name-matched, e.g. `/kll dungeon windrunner`) |
-| `/kll copy` | copyable list of applicant names for the companion |
-| `/kll reset` | reset window position |
-| `/kll status` | show current context + data file stats |
-
-The recruiting context is picked in this order: your manual override, then
-the group you actually have **listed** (dungeon from the activity, key level
-parsed from a "+13" in your listing title), then your own keystone.
-
-The window is movable (drag anywhere on it) and remembers its position. It
-pops up when applicants arrive; its X button snoozes it for the current
-batch of applicants only, while `/kll hide` turns it off until you
-`/kll show` again.
+Context is picked automatically: your manual override (`/kll 13`,
+`/kll dungeon windrunner`) beats the group you have **listed** (dungeon from
+the listing's activity, level parsed from a "+13" in its title), which beats
+your own keystone. `/kll auto` resets. You can also change level/dungeon on
+the website at any time and re-run.
 
 ### Playing nice with other addons
 
-KeyLevelLogs never touches the Blizzard group-finder frames, never hooks
-other addons, and never calls protected LFG functions — it only *reads* the
-applicant list in response to events and draws its own standalone window.
-By design it has zero overlap with Premade Groups Filter, which modifies
-only the *search results* side of the group finder, not the applicant side.
+The addon never touches the Blizzard group-finder frames, never hooks other
+addons, and never calls protected LFG functions — it only *reads* the
+applicant list in response to events and draws its own standalone window. By
+design it has zero overlap with Premade Groups Filter, which modifies only
+the *search-results* side of the group finder, not the applicant side.
 
 ## Testing without the game
 
 Everything testable outside the game is tested outside the game:
 
 ```bash
-./scripts/test.sh
+./scripts/test.sh          # runs all three suites
 ```
 
-- **Addon tests** (`tests/`): the real addon Lua runs under a simulated WoW
-  environment (frames, events, `C_LFGList`, `C_MythicPlus`, SavedVariables,
-  slash commands) on Lua 5.1 — the same Lua version WoW embeds. They cover
-  the percentile/fallback logic, the full applicant-event → window-rows
-  flow, sorting, overrides, window drag persistence, secret-value defense,
-  and no-data states.
-- **Companion tests** (`companion/test/`): unit tests for every module plus
-  an end-to-end run of the actual CLI against a fake Warcraft Logs server
-  (token → zone discovery → character fetch with realm-slug retry →
-  `Data.lua` generation). Generated `Data.lua` files are additionally
-  executed by real Lua to prove the game can load them.
+- **Addon** (`tests/`): the real addon Lua runs under a simulated WoW client
+  (frames, events, `C_LFGList`, secret-value semantics, SavedVariables) on
+  Lua 5.1 — the same Lua version WoW embeds. Covers the applicant-event →
+  window flow, URL building/encoding, context precedence, drag persistence,
+  snooze/visibility rules, and Midnight "secret value" defenses.
+  `lua5.1 tests/demo.lua` prints the window contents + generated URL.
+- **Website unit tests** (`site-tests/*.test.mjs`): the percentile
+  evaluation (exact / higher / one-below / only-lower / never), WCL response
+  transforms, realm-slug guessing, name parsing, HTML rendering and sorting.
+- **Website end-to-end** (`site-tests/e2e.mjs`): a real Chromium loads the
+  actual site against a fake Warcraft Logs server and verifies the whole
+  flow — arriving via an addon-generated URL, auto-lookup, rendered
+  percentiles, "no WCL character" handling, the detail matrix, and that
+  credentials never leave the page. (`npm install` once; CI runs it on every
+  push.)
 
-CI (GitHub Actions) runs all of this on every push.
+The only things that can't be verified outside the game are the live Blizzard
+client (one 5-minute in-game pass) and the real WCL API responses for your
+region's players (first paste on the live site).
 
 ## Repository layout
 
 ```
-KeyLevelLogs/            the addon (copy this folder into Interface/AddOns)
+KeyLevelLogs/       the addon (copy into Interface/AddOns)
   KeyLevelLogs.toc
-  Data.lua               generated data (placeholder until companion runs)
-  Core.lua               data lookup, evaluation, applicant tracking, slash cmds
-  UI.lua                 the movable window
-companion/               the out-of-game fetcher (Node.js, no dependencies)
-  keylevel-companion.mjs CLI entry point
-  lib/                   wcl api client, transforms, lua generation, sv parsing
-  test/                  node --test suite incl. fake-server integration test
-tests/                   addon test harness (WoW API mock) + test suites
-scripts/test.sh          run everything
+  Core.lua          applicant tracking, context, URL building, slash commands
+  UI.lua            the movable window + copy box
+docs/               the website (GitHub Pages serves this folder)
+  index.html
+  style.css
+  js/               app wiring + pure modules (wcl api, transforms, rendering)
+tests/              addon test harness (WoW API mock) + suites + demo
+site-tests/         website unit tests + real-browser e2e
+scripts/test.sh     run everything
 ```
 
 ## Notes & limitations
 
-- **Percentile source**: Warcraft Logs `encounterRankings` with
-  `byBracket: true` and the `playerscore` metric — each logged run carries
-  its keystone level, and the addon shows the best percentile per level.
-  If a percentile ever looks off compared to the website, run
-  `node keylevel-companion.mjs probe --names "Name-Realm"` and open an issue
-  with the output.
-- A player who doesn't log their runs will show `no WCL character` (or thin
-  data) even if they're experienced — same as when you check the website
-  manually. Data is also strictly per character: a known player applying on
-  a fresh alt looks like a new player, exactly as on the website.
-- Data is a snapshot: numbers update when the companion fetches, not live.
-  Rows show a gray age tag (e.g. `(5d)`) when a player's data is older than
-  two days; re-run the companion (or let watch mode do it) to refresh.
-- The WCL API allows 3,600 points/hour (free tier) — plenty for a night of
-  key-running. The companion skips players fetched within the last 30
-  minutes (`--max-age <minutes>` to tune, `--force` to override), caches the
-  zone/dungeon list and realm slugs, and batches characters per request.
-- Corporate/VPN proxies: the companion uses Node's built-in fetch, which
-  ignores `HTTP(S)_PROXY` environment variables. Run it on a normal home
-  connection.
+- Percentiles come from Warcraft Logs `encounterRankings` (`byBracket`, one
+  entry per run with its keystone level, `playerscore` metric). If a number
+  ever looks off next to the website, open an issue with the character name.
+- A player who doesn't log shows `no WCL character` even if experienced —
+  same answer the website gives. Data is per character: alts look like new
+  players.
+- Your API client allows 3,600 points/hour — far more than a night of
+  key-running needs. The site batches all dungeons per character into single
+  requests and caches the token (~1 year) and season list (24h).
+- The Warcraft Logs API's browser access (CORS) is intentional but not
+  contractual; if they ever turn it off, the fallback is a tiny proxy — open
+  an issue if lookups suddenly fail with CORS errors.

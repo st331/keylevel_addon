@@ -1,7 +1,3 @@
-# companion local state (contains your API credentials and fetched data)
-companion/config.json
-companion/keylevel-db.json
-
 # editor/os noise
 .DS_Store
 *.swp

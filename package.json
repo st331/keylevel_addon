@@ -1,0 +1,15 @@
+{
+  "name": "keylevel-addon-repo",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Dev tooling for the KeyLevelLogs addon + lookup site (tests only; the site itself has no build step)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test 'site-tests/*.test.mjs'",
+    "test:e2e": "node site-tests/e2e.mjs",
+    "test:all": "./scripts/test.sh"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

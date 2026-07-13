@@ -11,6 +11,7 @@ local ns = B.StartSession({
   savedVars = {
     window = { point = "BOTTOMRIGHT", relPoint = "BOTTOMRIGHT", x = -20, y = 30, shown = false },
     keyLevelOverride = 14,
+    siteURL = "https://example.com/kll/",
     seenApplicants = {
       ["Ancient-TestRealm"] = { lastSeen = 1000, class = "ROGUE" },      -- ancient -> pruned
       ["Recent-TestRealm"] = { lastSeen = now - 100, class = "MAGE" },   -- fresh -> kept
@@ -32,6 +33,7 @@ T.is_nil(db.seenApplicants["Ancient-TestRealm"], "stale entry pruned")
 T.is_nil(db.seenApplicants["Broken-TestRealm"], "corrupt entry pruned")
 T.ok(db.seenApplicants["Recent-TestRealm"], "recent entry kept")
 T.eq(db.autoShow, true, "new defaults merged in")
+T.contains(ns.BuildLookupURL({ "A-B" }), "https://example.com/kll/?", "saved site url used")
 
 T.group("corrupted SavedVariables replaced")
 ns = B.StartSession({ savedVars = "garbage string" })
@@ -53,22 +55,12 @@ T.eq(#ns.applicants, 1, "only the clean applicant tracked")
 T.contains(ns.applicants[1].name, "Alice", "clean applicant kept")
 mock.state.secretValues = nil
 
-T.group("data file missing entirely (nil global)")
-ns = B.StartSession({ data = false, keystoneLevel = 12, keystoneMapID = 503 })
-_G.KeyLevelLogsData = nil -- as if Data.lua failed to load
+T.group("no keystone, no listing: URL still valid")
+ns = B.StartSession({})
 mock.SetApplicants({ { applicantID = 1, members = { { name = "Alice", class = "MAGE" } } } })
 mock.FireEvent("LFG_LIST_APPLICANT_LIST_UPDATED")
-mock.Advance(0.5) -- must not error
-T.eq(#ns.applicants, 1, "applicants still tracked without data")
-T.contains(ns.UI.rows[1].any:GetText(), "not fetched", "renders not-fetched state")
-T.contains(ns.UI.context:GetText(), "no data file", "warns about missing data")
-
-T.group("placeholder Data.lua (fresh install, shipped file)")
-ns = B.StartSession({ data = false, keystoneLevel = 12, keystoneMapID = 503 })
--- data = false keeps the real shipped placeholder from KeyLevelLogs/Data.lua
-T.eq(type(_G.KeyLevelLogsData), "table", "placeholder data global exists")
-T.ok(not ns.HasData(), "placeholder counts as no data")
-local ctx = ns.GetContext()
-T.eq(ctx.level, 12, "keystone level still resolves")
-T.is_nil(ctx.encounterID, "no encounter mapping without data")
-T.eq(ctx.dungeonName, "Ara-Kara, City of Echoes", "dungeon name comes from game API")
+mock.Advance(0.5)
+local url = ns.BuildLookupURL(ns.NamesForLookup())
+T.contains(url, "chars=Alice-TestRealm", "names present")
+T.not_contains(url, "level=", "no level param")
+T.contains(_G.KeyLevelLogsFrame._scripts.OnDragStart and "ok" or "", "ok", "window functional without context")

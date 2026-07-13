@@ -314,6 +314,7 @@ function M.install()
     return nil
   end
   _G.GetNormalizedRealmName = function() return M.state.realmNormalized end
+  _G.GetCurrentRegion = function() return M.state.region or 1 end
   _G.GetRealmName = function() return M.state.realmDisplay end
   _G.UnitClass = function() return "Mage", "MAGE", 8 end
   _G.IsInGroup = function() return false end

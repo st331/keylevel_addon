@@ -1,4 +1,4 @@
--- test_core.lua — pure logic: names, colors, evaluation, encounter mapping.
+-- test_core.lua — pure logic: names, URL building, recruiting context.
 
 local B = _G.__B
 local T = B.T
@@ -9,10 +9,6 @@ T.group("toc sanity")
 T.ok(directives.Interface and directives.Interface:match("^%d+"), "Interface directive present")
 T.eq(directives.SavedVariables, "KeyLevelLogsDB", "SavedVariables declared")
 T.ok(directives.Title, "Title present")
-
-local AK = 12660       -- Ara-Kara (fixture)
-local COT = 12669      -- City of Threads (fixture)
-local MISTS = 62290    -- Mists (fixture, no challengeMapID)
 
 T.group("NormalizeName")
 T.eq(ns.NormalizeName("Alice"), "Alice-TestRealm", "bare name gets player realm")
@@ -35,112 +31,67 @@ T.group("DisplayName")
 T.eq(ns.DisplayName("Alice-TestRealm"), "Alice", "own realm hidden")
 T.eq(ns.DisplayName("Eve-OtherRealm"), "Eve-OtherRealm", "other realm shown")
 
-T.group("ColorForPercent")
-T.eq(ns.ColorForPercent(100), "e5cc80", "100 gold")
-T.eq(ns.ColorForPercent(99), "e268a8", "99 pink")
-T.eq(ns.ColorForPercent(95), "ff8000", "95 orange")
-T.eq(ns.ColorForPercent(94.9), "a335ee", "94.9 purple")
-T.eq(ns.ColorForPercent(75), "a335ee", "75 purple")
-T.eq(ns.ColorForPercent(50), "0070ff", "50 blue")
-T.eq(ns.ColorForPercent(25), "1eff00", "25 green")
-T.eq(ns.ColorForPercent(0), "9d9d9d", "0 gray")
-T.contains(ns.FormatPercent(99.6), "99", "FormatPercent floors")
-T.contains(ns.FormatPercent(99.6), "e268a8", "99.6 floors to 99 => pink")
+T.group("URLEncode")
+T.eq(ns.URLEncode("Alice-Area52"), "Alice-Area52", "unreserved chars untouched")
+T.eq(ns.URLEncode("a b"), "a%20b", "space encoded")
+T.eq(ns.URLEncode("a&b=c"), "a%26b%3Dc", "query metachars encoded")
+T.eq(ns.URLEncode("Ñight"), "%C3%91ight", "utf-8 bytes percent-encoded")
 
-T.group("AgeTag")
-T.is_nil(ns.AgeTag(mock.state.now - 3600), "1h old: fresh")
-T.is_nil(ns.AgeTag(mock.state.now - 47 * 3600), "47h old: fresh")
-T.eq(ns.AgeTag(mock.state.now - 5 * 86400), "5d", "5 days")
-T.eq(ns.AgeTag(mock.state.now - 300 * 86400), "99d+", "capped")
-T.is_nil(ns.AgeTag(nil), "unknown updated")
+T.group("RegionSlug")
+T.eq(ns.RegionSlug(), "us", "region 1 = us")
+mock.state.region = 3
+T.eq(ns.RegionSlug(), "eu", "region 3 = eu")
+mock.state.region = 99
+T.eq(ns.RegionSlug(), "us", "unknown region falls back to us")
+mock.state.region = nil
 
-T.group("EncounterForMap")
-local enc, name = ns.EncounterForMap(503)
-T.eq(enc, AK, "maps 503 by explicit challengeMapID")
-T.eq(name, "Ara-Kara, City of Echoes", "dungeon name")
-local enc2 = ns.EncounterForMap(375) -- fixture has no challengeMapID for Mists; falls back to name match
-T.eq(enc2, MISTS, "name-based fallback when challengeMapID missing")
-T.is_nil(ns.EncounterForMap(99999), "unknown map id")
-T.is_nil(ns.EncounterForMap(nil), "nil map id")
+T.group("context from own keystone")
+mock.state.keystoneLevel = 12
+mock.state.keystoneMapID = 503
+local ctx = ns.GetContext()
+T.eq(ctx.level, 12, "level from keystone")
+T.eq(ctx.dungeonName, "Ara-Kara, City of Echoes", "dungeon name from challenge map")
 
-T.group("EncounterByName")
-T.eq((ns.EncounterByName("City of Threads")), COT, "exact name")
-T.eq((ns.EncounterByName("city of threads")), COT, "case-insensitive")
-T.eq((ns.EncounterByName("ara-kara")), AK, "partial match")
-T.eq((ns.EncounterByName("Ara-Kara, City of Echoes (Mythic Keystone)")), AK,
-  "decorated activity fullName matches (reverse containment)")
-T.eq((ns.EncounterByName("city")), COT, "ambiguous match resolves deterministically (prefix wins)")
-T.is_nil((ns.EncounterByName("Nonexistent Hall")), "no match")
+T.group("context from active listing beats keystone")
+mock.state.activeEntry = { name = "LF healer +13 weekly", activityIDs = { 999 } }
+mock.state.activities = { [999] = { fullName = "City of Threads (Mythic Keystone)", isMythicPlusActivity = true } }
+ctx = ns.GetContext()
+T.eq(ctx.level, 13, "level parsed from listing title")
+T.eq(ctx.dungeonName, "City of Threads", "dungeon from listing, decoration stripped")
+mock.state.activeEntry = nil
+mock.state.activities = nil
+ctx = ns.GetContext()
+T.eq(ctx.level, 12, "keystone again once listing is gone")
 
-T.group("Evaluate: exact hit")
-local alice = ns.LookupPlayer("Alice-TestRealm")
-local e = ns.Evaluate(alice, AK, 12)
-T.eq(e.status, "OK", "status")
-T.near(e.anyAtLevel.pct, 91.2, 0.001, "any at 12")
-T.eq(e.anyAtLevel.runs, 2, "runs at 12")
-T.near(e.dungeon.pct, 91.2, 0.001, "dungeon pct")
-T.eq(e.dungeon.level, 12, "dungeon level")
-T.eq(e.dungeon.kind, "exact", "exact hit")
+T.group("context overrides")
+ns.db.keyLevelOverride = 14
+ns.db.dungeonOverride = "Mists of Tirna Scithe"
+ctx = ns.GetContext()
+T.eq(ctx.level, 14, "manual level wins")
+T.eq(ctx.dungeonName, "Mists of Tirna Scithe", "manual dungeon wins")
+ns.db.keyLevelOverride = nil
+ns.db.dungeonOverride = nil
 
-T.group("Evaluate: fallback one level below")
-local bob = ns.LookupPlayer("Bob-TestRealm")
-e = ns.Evaluate(bob, AK, 12)
-T.near(e.anyAtLevel.pct, 77.0, 0.001, "bob any at 12")
-T.near(e.dungeon.pct, 76.4, 0.001, "bob AK from +11")
-T.eq(e.dungeon.level, 11, "fallback level")
-T.eq(e.dungeon.kind, "below", "one below")
+T.group("BuildLookupURL")
+local url = ns.BuildLookupURL({ "Alice-TestRealm", "Bob-Area52" })
+T.contains(url, "https://st331.github.io/keylevel_addon/?", "default site base")
+T.contains(url, "region=us", "region param")
+T.contains(url, "level=12", "level param from context")
+T.contains(url, "dungeon=Ara-Kara%2C%20City%20of%20Echoes", "dungeon param encoded")
+T.contains(url, "chars=Alice-TestRealm,Bob-Area52", "names joined with comma")
 
-T.group("Evaluate: higher level counts (above)")
-e = ns.Evaluate(alice, AK, 10) -- alice has AK at 11 and 12; nearest above is 11
-T.eq(e.dungeon.kind, "above", "above kind")
-T.eq(e.dungeon.level, 11, "nearest higher level picked")
-T.near(e.dungeon.pct, 88.0, 0.001, "pct from +11")
-local eve = ns.LookupPlayer("Eve-OtherRealm")
-e = ns.Evaluate(eve, MISTS, 11) -- eve has Mists at 12 only
-T.eq(e.dungeon.kind, "above", "eve above")
-T.eq(e.dungeon.level, 12, "eve above level")
-local carol = ns.LookupPlayer("Carol-TestRealm")
-e = ns.Evaluate(carol, AK, 2) -- carol's +9 counts as above for a +2
-T.eq(e.dungeon.kind, "above", "+9 log qualifies for a +2 key")
-T.eq(e.dungeon.level, 9, "level 9")
-T.is_nil(e.dungeonBest, "no dungeonBest when dungeon found")
+T.group("BuildLookupURL respects /kll site override")
+ns.db.siteURL = "https://example.com/lookup/"
+url = ns.BuildLookupURL({ "Alice-TestRealm" })
+T.contains(url, "https://example.com/lookup/?", "custom base used")
+ns.db.siteURL = nil
 
-T.group("Evaluate: nothing at level, above, or one below")
-e = ns.Evaluate(carol, AK, 12)
-T.is_nil(e.anyAtLevel, "carol has nothing at 12")
-T.is_nil(e.dungeon, "no 12/above/11 for AK")
-T.eq(e.dungeonBest.level, 9, "best AK level")
-T.near(e.dungeonBest.pct, 55.5, 0.001, "best AK pct")
-T.eq(e.anyBest.level, 9, "best any level")
-
-T.group("Evaluate: level yes, dungeon never")
-e = ns.Evaluate(eve, AK, 12)
-T.near(e.anyAtLevel.pct, 99.5, 0.001, "eve any at 12")
-T.is_nil(e.dungeon, "never did AK")
-T.is_nil(e.dungeonBest, "no AK at any level")
-
-T.group("Evaluate: unknown player / bad data / missing on WCL")
-e = ns.Evaluate(nil, AK, 12)
-T.eq(e.status, "NO_PLAYER", "nil player")
-e = ns.Evaluate({}, AK, 12)
-T.eq(e.status, "NO_PLAYER", "player with no levels table")
-e = ns.Evaluate(ns.LookupPlayer("Nolan-TestRealm"), AK, 12)
-T.eq(e.status, "NO_WCL", "companion marked player as missing on WCL")
-
-T.group("Evaluate: no key level context")
-e = ns.Evaluate(alice, AK, nil)
-T.eq(e.status, "OK", "still OK")
-T.is_nil(e.anyAtLevel, "no level -> no anyAtLevel")
-T.is_nil(e.dungeon, "no level -> no dungeon cell")
-T.eq(e.anyBest.level, 12, "anyBest reported")
-
-T.group("Evaluate: no encounter context")
-e = ns.Evaluate(alice, nil, 12)
-T.near(e.anyAtLevel.pct, 91.2, 0.001, "any still works")
-T.is_nil(e.dungeon, "no dungeon without encounter")
-T.is_nil(e.dungeonBest, "no dungeonBest without encounter")
-
-T.group("Evaluate: one-below at the bottom")
-e = ns.Evaluate(carol, AK, 10) -- 10-1 = 9, carol has AK at 9: a below hit
-T.ok(e.dungeon and e.dungeon.kind == "below", "one-below hit at +9 for a +10 key")
-T.eq(e.dungeon and e.dungeon.level, 9, "fallback level 9")
+T.group("BuildLookupURL without context")
+mock.state.keystoneLevel = nil
+mock.state.keystoneMapID = nil
+url = ns.BuildLookupURL({ "Alice-TestRealm" })
+T.not_contains(url, "level=", "no level param when unknown")
+T.not_contains(url, "dungeon=", "no dungeon param when unknown")
+T.contains(url, "chars=Alice-TestRealm", "names still present")
+mock.state.keystoneLevel = 12
+mock.state.keystoneMapID = 503

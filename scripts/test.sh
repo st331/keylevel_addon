@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Runs every automated check: addon Lua tests (under the WoW mock) and
-# companion Node tests (with a fake WCL server + real-Lua roundtrip).
+# Runs every automated check:
+#   1. addon Lua tests (real addon code under a simulated WoW client, Lua 5.1)
+#   2. website unit tests (node --test over docs/js modules)
+#   3. website end-to-end test (real Chromium + fake Warcraft Logs server)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,7 +17,19 @@ fi
 echo "==> addon tests ($LUA_BIN)"
 "$LUA_BIN" tests/run_tests.lua
 
-echo "==> companion tests (node --test)"
-(cd companion && node --test 'test/*.test.mjs')
+echo "==> site unit tests (node --test)"
+node --test 'site-tests/*.test.mjs'
+
+echo "==> site e2e (real browser + fake WCL server)"
+if node -e "require.resolve('playwright')" 2>/dev/null; then
+  # prefer a preinstalled chromium if the playwright-managed one is absent
+  if [ -z "${PLAYWRIGHT_CHROMIUM:-}" ] && [ -d /opt/pw-browsers ]; then
+    PLAYWRIGHT_CHROMIUM=$(find /opt/pw-browsers -name chrome -type f 2>/dev/null | head -1 || true)
+    export PLAYWRIGHT_CHROMIUM
+  fi
+  node site-tests/e2e.mjs
+else
+  echo "skipped: playwright not installed (run: npm install && npx playwright install chromium)"
+fi
 
 echo "==> all checks passed"

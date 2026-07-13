@@ -1,11 +1,10 @@
 ## Interface: 120007
 ## Title: KeyLevelLogs
-## Notes: Warcraft Logs Mythic+ percentiles, per key level, for your group applicants.
+## Notes: Collects your M+ applicants' names and builds a one-click Warcraft Logs lookup link for the KeyLevelLogs website.
 ## Author: slainsteel
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: KeyLevelLogsDB
 ## X-Website: https://github.com/st331/keylevel_addon
 
-Data.lua
 Core.lua
 UI.lua

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KeyLevelLogs — M+ applicant log lookup</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
+</head>
+<body>
+<main>
+  <header>
+    <h1>🔑 KeyLevelLogs</h1>
+    <p class="tagline">Paste your Mythic+ applicants — see their Warcraft Logs percentiles
+      for <em>your</em> key level: any dungeon at that level, and your dungeon at the same
+      level, a higher one, or one below.</p>
+  </header>
+
+  <details id="setup">
+    <summary>Setup — Warcraft Logs API credentials (<span id="creds-state"></span>)</summary>
+    <div class="setup-body">
+      <ol>
+        <li>Create a free API client at
+          <a href="https://www.warcraftlogs.com/api/clients/" target="_blank" rel="noopener">warcraftlogs.com/api/clients</a>
+          — any name, no redirect URL, leave “Public Client” unchecked.</li>
+        <li>Paste the client id and secret here. They are stored <strong>only in this
+          browser</strong> (localStorage) and sent only to warcraftlogs.com.</li>
+      </ol>
+      <div class="cred-row">
+        <input id="client-id" type="text" placeholder="client id" autocomplete="off">
+        <input id="client-secret" type="password" placeholder="client secret" autocomplete="off">
+        <button id="save-creds">Save</button>
+        <button id="forget-creds" class="secondary">Forget</button>
+      </div>
+    </div>
+  </details>
+
+  <section class="controls">
+    <div class="control">
+      <label for="region">Region</label>
+      <select id="region">
+        <option value="us">US</option>
+        <option value="eu">EU</option>
+        <option value="kr">KR</option>
+        <option value="tw">TW</option>
+      </select>
+    </div>
+    <div class="control">
+      <label for="level">Key level</label>
+      <input id="level" type="number" min="2" max="40" placeholder="12">
+    </div>
+    <div class="control grow">
+      <label for="dungeon">Dungeon</label>
+      <select id="dungeon"><option value="">(any / not sure)</option></select>
+    </div>
+  </section>
+
+  <section class="names-box">
+    <label for="names">Characters — one per line or comma-separated, <code>Name-Realm</code>
+      (the addon’s <strong>Copy URL</strong> fills everything in automatically)</label>
+    <textarea id="names" rows="4" placeholder="Playerone-Area52&#10;Playertwo-TwistingNether"></textarea>
+    <button id="lookup">Look up</button>
+  </section>
+
+  <div id="status" class="status"></div>
+  <div id="results"></div>
+
+  <footer>
+    <p>Colors follow Warcraft Logs tiers. “(higher)” = they logged the dungeon above your
+      level (counts at least as much); “(one below)” = only one level below.
+      A player with no rows simply doesn’t log — same answer the website would give.</p>
+    <p><a href="https://github.com/st331/keylevel_addon" target="_blank" rel="noopener">Addon &amp; source on GitHub</a></p>
+  </footer>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
