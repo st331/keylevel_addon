@@ -1,0 +1,11 @@
+## Interface: 120007
+## Title: KeyLevelLogs
+## Notes: Warcraft Logs Mythic+ percentiles, per key level, for your group applicants.
+## Author: slainsteel
+## Version: 0.1.0
+## SavedVariables: KeyLevelLogsDB
+## X-Website: https://github.com/st331/keylevel_addon
+
+Data.lua
+Core.lua
+UI.lua

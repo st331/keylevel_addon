@@ -1,0 +1,10 @@
+{
+  "name": "keylevellogs-companion",
+  "version": "0.1.0",
+  "description": "Fetches Warcraft Logs M+ percentiles and writes KeyLevelLogs/Data.lua",
+  "type": "module",
+  "engines": { "node": ">=18.0.0" },
+  "scripts": {
+    "test": "node --test 'test/*.test.mjs'"
+  }
+}
