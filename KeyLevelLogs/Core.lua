@@ -306,25 +306,38 @@ local function usable(v)
   return true
 end
 
+-- One applicant group; every value from C_LFGList is treated as potentially
+-- secret (Midnight 12.0), so the caller wraps this in pcall — loop bounds,
+-- table indexing and comparisons on secrets all raise.
+local function processApplicant(id, out)
+  if not usable(id) then return end
+  local info = C_LFGList.GetApplicantInfo(id)
+  if not info or not usable(info.applicationStatus) then return end
+  if not INTERESTING_STATUS[info.applicationStatus or "applied"] then return end
+  if not usable(info.numMembers) then return end
+  for m = 1, info.numMembers or 0 do
+    -- Only the first two returns (name, class token) are relied upon.
+    local name, class = C_LFGList.GetApplicantMemberInfo(id, m)
+    local full = (usable(name) and type(name) == "string")
+      and ns.NormalizeName(name) or nil
+    if not usable(class) then class = nil end
+    if full then
+      table.insert(out, { name = full, class = class, applicantID = id })
+      if ns.db then
+        ns.db.seenApplicants[full] = { lastSeen = time(), class = class }
+      end
+    end
+  end
+end
+
 function ns.RefreshApplicants()
   local out = {}
-  local ids = (C_LFGList and C_LFGList.GetApplicants and C_LFGList.GetApplicants()) or {}
-  for _, id in ipairs(ids) do
-    local ok, info = pcall(C_LFGList.GetApplicantInfo, id)
-    if ok and usable(id) and info and INTERESTING_STATUS[info.applicationStatus or "applied"] then
-      for m = 1, info.numMembers or 0 do
-        -- Only the first two returns (name, class token) are relied upon.
-        local ok2, name, class = pcall(C_LFGList.GetApplicantMemberInfo, id, m)
-        local full = (ok2 and usable(name) and type(name) == "string")
-          and ns.NormalizeName(name) or nil
-        if not usable(class) then class = nil end
-        if full then
-          table.insert(out, { name = full, class = class, applicantID = id })
-          if ns.db then
-            ns.db.seenApplicants[full] = { lastSeen = time(), class = class }
-          end
-        end
-      end
+  local ok, ids = pcall(function()
+    return (C_LFGList and C_LFGList.GetApplicants and C_LFGList.GetApplicants()) or {}
+  end)
+  if ok and type(ids) == "table" then
+    for _, id in ipairs(ids) do
+      pcall(processApplicant, id, out)
     end
   end
   ns.applicants = out
@@ -354,6 +367,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     eventFrame:UnregisterEvent("ADDON_LOADED")
     ns.InitDB()
     eventFrame:RegisterEvent("PLAYER_LOGIN")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD") -- realm name can be nil during loading screens; re-read after
     eventFrame:RegisterEvent("LFG_LIST_APPLICANT_LIST_UPDATED")
     eventFrame:RegisterEvent("LFG_LIST_APPLICANT_UPDATED")
     eventFrame:RegisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE")
