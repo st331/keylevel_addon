@@ -117,6 +117,8 @@ table.detail th{
 }
 table.detail .dungeon-col{ text-align:left; color:var(--muted); white-space:nowrap }
 table.detail .target-level{ background:rgba(248,183,0,.08); border-radius:4px }
+a.runlink{ text-decoration:none }
+a.runlink:hover .pct{ text-decoration:underline }
 table.detail tr.stats td{ border-top:1px solid var(--grid) }
 table.detail tr.stats .dungeon-col{
   color:var(--gold); font-size:.7rem; font-weight:700;

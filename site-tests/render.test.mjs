@@ -82,6 +82,17 @@ test("detailMatrixHTML renders matrix with target column and skips empty dungeon
   assert.match(detailMatrixHTML(playerFromResult({ classID: 4 }), ENCOUNTERS, 12), /No Mythic\+ logs/);
 });
 
+test("detailMatrixHTML links each percentile to its source report", () => {
+  const p = playerFromResult({
+    classID: 4,
+    [`e${AK}`]: { ranks: [{ historicalPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire", report: { code: "Q4Yaq7hdRc9K2wPk", fightID: 3 } }] },
+  });
+  const html = detailMatrixHTML(p, ENCOUNTERS, 12);
+  assert.match(html, /href="https:\/\/www\.warcraftlogs\.com\/reports\/Q4Yaq7hdRc9K2wPk\?fight=3&type=damage-done"/);
+  assert.match(html, /class="runlink"/);
+  assert.match(html, /target="_blank"/);
+});
+
 test("detailMatrixHTML appends per-level average and median rows", () => {
   // AK 91.2 + CoT 71.0 at +12 -> avg 81.1 -> shown 81%, median 81.1 -> 81%
   const html = detailMatrixHTML(alice, ENCOUNTERS, 12);

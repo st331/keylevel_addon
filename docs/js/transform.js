@@ -55,6 +55,10 @@ export function bestPerLevel(blob) {
     if (p > e.pct) {
       e.pct = p;
       e.spec = rank.spec || rank.bestSpec || undefined;
+      // provenance: link the best run to its exact report fight
+      if (rank.report?.code) {
+        e.report = { code: rank.report.code, fightID: rank.report.fightID };
+      }
     }
   }
   return out;
