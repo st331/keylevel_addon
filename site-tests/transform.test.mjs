@@ -22,10 +22,21 @@ function alicePlayer() {
   });
 }
 
-test("pickPercent prefers bracketPercent", () => {
-  assert.equal(pickPercent({ bracketPercent: 95, rankPercent: 90 }), 95);
+test("pickPercent prefers bracketPercent, then todayPercent, then rankPercent", () => {
+  assert.equal(pickPercent({ bracketPercent: 95, todayPercent: 92, rankPercent: 90 }), 95);
+  // real case (Steelsdk +20): report Key% 9 = todayPercent 9.72, not historical 10.38
+  assert.equal(pickPercent({ todayPercent: 9.72, rankPercent: 10.38 }), 9.72);
   assert.equal(pickPercent({ rankPercent: 90 }), 90);
   assert.equal(pickPercent({}), null);
+});
+
+test("bestPerLevel dedupes identical runs (same level + amount)", () => {
+  const out = bestPerLevel({ ranks: [
+    { todayPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire" },
+    { todayPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire" }, // API duplicate
+    { todayPercent: 60.0, bracketData: 12, amount: 90, spec: "Fire" },
+  ] });
+  assert.deepEqual(out[12].pcts, [91.2, 60], "duplicate run counted once");
 });
 
 test("bestPerLevel keeps best pct per keystone level, skips junk", () => {
