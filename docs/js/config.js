@@ -11,7 +11,7 @@
 // account or private logs). Regenerate the secret on the WCL clients page
 // and re-deploy if it's ever abused.
 
-export const EMBEDDED_CLIENT_ID = "a1fd073d-42da-47f6-89da-9c78dec3c75a";
+export const EMBEDDED_CLIENT_ID = "019f5e9a-b2bd-71fd-957f-8dae7ba58c5b";
 export const EMBEDDED_CLIENT_SECRET = "__WCL_CLIENT_SECRET__";
 
 const unset = (s) => !s || s.startsWith("__");

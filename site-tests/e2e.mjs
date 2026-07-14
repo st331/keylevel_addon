@@ -162,7 +162,8 @@ try {
     await check("used the deploy-injected embedded credentials", async () => {
       assert.equal(wcl.state.lastTokenGrant.grant_type, "client_credentials");
       const basic = Buffer.from(wcl.state.lastTokenAuth.replace(/^Basic /, ""), "base64").toString();
-      assert.match(basic, /^a1fd073d-.*:e2e-injected-secret$/, "embedded id + injected secret");
+      const { EMBEDDED_CLIENT_ID } = await import("../docs/js/config.js");
+      assert.equal(basic, `${EMBEDDED_CLIENT_ID}:e2e-injected-secret`, "embedded id + injected secret");
     });
 
     await check("results render (exact-level hit + missing character)", async () => {
