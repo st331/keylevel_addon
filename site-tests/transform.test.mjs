@@ -22,19 +22,20 @@ function alicePlayer() {
   });
 }
 
-test("pickPercent prefers bracketPercent, then todayPercent, then rankPercent", () => {
-  assert.equal(pickPercent({ bracketPercent: 95, todayPercent: 92, rankPercent: 90 }), 95);
-  // real case (Steelsdk +20): report Key% 9 = todayPercent 9.72, not historical 10.38
-  assert.equal(pickPercent({ todayPercent: 9.72, rankPercent: 10.38 }), 9.72);
-  assert.equal(pickPercent({ rankPercent: 90 }), 90);
+test("pickPercent uses the historical (at-the-time) percentile", () => {
+  // gear inflation: today's re-ranking understates old runs — use historical.
+  // real case (Steelsdk +20 PoS): historical 4.02, today had drifted to 3.26
+  assert.equal(pickPercent({ historicalPercent: 4.02, todayPercent: 3.26, rankPercent: 4.02 }), 4.02);
+  assert.equal(pickPercent({ rankPercent: 90 }), 90, "falls back to rankPercent");
+  assert.equal(pickPercent({ todayPercent: 50 }), null, "todayPercent alone is not used");
   assert.equal(pickPercent({}), null);
 });
 
 test("bestPerLevel dedupes identical runs (same level + amount)", () => {
   const out = bestPerLevel({ ranks: [
-    { todayPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire" },
-    { todayPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire" }, // API duplicate
-    { todayPercent: 60.0, bracketData: 12, amount: 90, spec: "Fire" },
+    { historicalPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire" },
+    { historicalPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire" }, // API duplicate
+    { historicalPercent: 60.0, bracketData: 12, amount: 90, spec: "Fire" },
   ] });
   assert.deepEqual(out[12].pcts, [91.2, 60], "duplicate run counted once");
 });
