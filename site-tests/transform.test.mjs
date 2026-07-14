@@ -35,7 +35,7 @@ test("bestPerLevel keeps best pct per keystone level, skips junk", () => {
     { rankPercent: null, bracketData: 10 },
     { rankPercent: 70, bracketData: 0 },
   ] });
-  assert.deepEqual(out, { 12: { pct: 91.3, spec: "Fire" } });
+  assert.deepEqual(out, { 12: { pct: 91.3, spec: "Fire", pcts: [80, 91.3] } });
 });
 
 test("playerFromResult builds levels; null result is missing", () => {
@@ -52,7 +52,9 @@ test("evaluate: exact hit", () => {
   assert.equal(ev.status, "OK");
   assert.equal(ev.anyAtLevel.pct, 91.2);
   assert.equal(ev.anyAtLevel.runs, 2);
-  assert.deepEqual(ev.dungeon, { pct: 91.2, level: 12, spec: "Fire", kind: "exact" });
+  assert.deepEqual([...ev.anyAtLevel.pcts].sort((a, b) => a - b), [71, 91.2],
+    "per-dungeon bests at the level, for avg/median");
+  assert.deepEqual(ev.dungeon, { pct: 91.2, level: 12, spec: "Fire", kind: "exact", pcts: [91.2] });
 });
 
 test("evaluate: nearest higher level counts", () => {
@@ -69,7 +71,21 @@ test("evaluate: one below", () => {
   });
   const ev = evaluate(bob, AK, 12);
   assert.equal(ev.anyAtLevel.pct, 77);
-  assert.deepEqual(ev.dungeon, { pct: 76.4, level: 11, spec: "Fury", kind: "below" });
+  assert.deepEqual(ev.dungeon, { pct: 76.4, level: 11, spec: "Fury", kind: "below", pcts: [76.4] });
+});
+
+test("evaluate: dungeon result carries every run's percentile", () => {
+  const p = playerFromResult({
+    classID: 4,
+    [`e${AK}`]: { ranks: [
+      { rankPercent: 91.2, bracketData: 12, spec: "Fire" },
+      { rankPercent: 60.0, bracketData: 12, spec: "Fire" },
+      { rankPercent: 40.0, bracketData: 12, spec: "Frost" },
+    ] },
+  });
+  const ev = evaluate(p, AK, 12);
+  assert.equal(ev.dungeon.pct, 91.2, "best");
+  assert.deepEqual(ev.dungeon.pcts, [91.2, 60, 40], "all runs retained");
 });
 
 test("evaluate: nothing relevant -> dungeonBest and anyBest", () => {

@@ -28,16 +28,22 @@ export function pickPercent(rank) {
   return typeof pct === "number" ? pct : null;
 }
 
-// Collapse one dungeon's ranks into { [keyLevel]: { pct, spec } } keeping the
-// best percentile per level.
+// Collapse one dungeon's ranks into { [keyLevel]: { pct, spec, pcts } }:
+// pct/spec from the best run at that level, pcts = every run's percentile
+// (so best/average/median can be shown).
 export function bestPerLevel(blob) {
   const out = {};
   for (const rank of blob?.ranks ?? []) {
     const level = rank?.bracketData;
     const pct = pickPercent(rank);
     if (!Number.isInteger(level) || level < 2 || pct === null) continue;
-    if (!out[level] || pct > out[level].pct) {
-      out[level] = { pct: round1(pct), spec: rank.spec || rank.bestSpec || undefined };
+    const p = round1(pct);
+    if (!out[level]) out[level] = { pct: -1, spec: undefined, pcts: [] };
+    const e = out[level];
+    e.pcts.push(p);
+    if (p > e.pct) {
+      e.pct = p;
+      e.spec = rank.spec || rank.bestSpec || undefined;
     }
   }
   return out;
@@ -78,23 +84,28 @@ export function evaluate(player, encounterID, keyLevel) {
   if (keyLevel) {
     const atLevel = levels[keyLevel];
     if (atLevel && atLevel.runs > 0) {
-      result.anyAtLevel = { pct: atLevel.best, runs: atLevel.runs };
+      // pcts: each dungeon's best at this level (feeds best/avg/median)
+      result.anyAtLevel = {
+        pct: atLevel.best,
+        runs: atLevel.runs,
+        pcts: Object.values(atLevel.dungeons).map((d) => d.pct),
+      };
     }
     if (encounterID) {
       const exact = atLevel?.dungeons?.[encounterID];
       if (exact) {
-        result.dungeon = { pct: exact.pct, level: keyLevel, spec: exact.spec, kind: "exact" };
+        result.dungeon = { pct: exact.pct, level: keyLevel, spec: exact.spec, kind: "exact", pcts: exact.pcts };
       } else {
         const above = levelNums
           .filter((l) => l > keyLevel && levels[l].dungeons?.[encounterID])
           .sort((a, b) => a - b)[0];
         if (above !== undefined) {
           const d = levels[above].dungeons[encounterID];
-          result.dungeon = { pct: d.pct, level: above, spec: d.spec, kind: "above" };
+          result.dungeon = { pct: d.pct, level: above, spec: d.spec, kind: "above", pcts: d.pcts };
         } else {
           const fb = levels[keyLevel - 1]?.dungeons?.[encounterID];
           if (fb) {
-            result.dungeon = { pct: fb.pct, level: keyLevel - 1, spec: fb.spec, kind: "below" };
+            result.dungeon = { pct: fb.pct, level: keyLevel - 1, spec: fb.spec, kind: "below", pcts: fb.pcts };
           }
         }
       }

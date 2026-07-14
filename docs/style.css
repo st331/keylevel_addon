@@ -95,6 +95,7 @@ tr.row td:first-child{ white-space:nowrap }
 
 /* percentile tiers (Warcraft Logs) */
 .pct{ font-weight:700; font-variant-numeric:tabular-nums }
+.pct .sfx{ font-style:normal; font-weight:400; font-size:.72em; color:var(--muted); margin-left:1px }
 .tier-gold  { color:#e5cc80 }
 .tier-pink  { color:#e268a8 }
 .tier-orange{ color:#ff8000 }
