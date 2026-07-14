@@ -176,6 +176,16 @@ try {
       assert.match(ghost, /no WCL character/);
     });
 
+    await check("summary shows the avg · med column at the target level", async () => {
+      const head = await page.locator("table.summary thead").innerText();
+      assert.match(head, /avg · med @\+12/i);
+      // Foo has only AK (91.2%) at +12 -> avg = med = 91%
+      const cells = await page.locator("tr.row", { hasText: "Foo-Area52" }).locator("td").allInnerTexts();
+      assert.match(cells[2], /91%\s*·\s*91%/, "avg · med cell");
+      const ghostCells = await page.locator("tr.row", { hasText: "Ghost-Sargeras" }).locator("td").allInnerTexts();
+      assert.match(ghostCells[2], /—/, "missing player shows a dash");
+    });
+
     await check("Foo sorts above Ghost", async () => {
       const names = await page.locator("tr.row .charname").allInnerTexts();
       assert.deepEqual(names, ["Foo-Area52", "Ghost-Sargeras"]);
