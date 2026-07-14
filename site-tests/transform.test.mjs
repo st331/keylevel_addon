@@ -31,12 +31,13 @@ test("pickPercent uses the historical (at-the-time) percentile", () => {
   assert.equal(pickPercent({}), null);
 });
 
-test("bestPerLevel links the best run's report for provenance", () => {
+test("bestPerLevel links the best run's report and date for provenance", () => {
   const out = bestPerLevel({ ranks: [
-    { historicalPercent: 60.0, bracketData: 12, amount: 90, report: { code: "AAA", fightID: 2, startTime: 1 } },
-    { historicalPercent: 91.2, bracketData: 12, amount: 100, report: { code: "BBB", fightID: 5, startTime: 2 } },
+    { historicalPercent: 60.0, bracketData: 12, amount: 90, startTime: 111, report: { code: "AAA", fightID: 2 } },
+    { historicalPercent: 91.2, bracketData: 12, amount: 100, startTime: 222, report: { code: "BBB", fightID: 5 } },
   ] });
   assert.deepEqual(out[12].report, { code: "BBB", fightID: 5 }, "best run wins the link");
+  assert.equal(out[12].when, 222, "best run's date retained");
 });
 
 test("bestPerLevel dedupes identical runs (same level + amount)", () => {

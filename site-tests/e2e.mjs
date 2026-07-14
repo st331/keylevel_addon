@@ -64,7 +64,7 @@ function characterResponse(query) {
       out[alias] = {
         classID: 4,
         [`e${AK}`]: { ranks: [
-          { historicalPercent: 91.2, rankPercent: 91.2, todayPercent: 85.0, bracketData: 12, amount: 100, spec: "Fire", report: { code: "TESTCODE1", fightID: 7 } },
+          { historicalPercent: 91.2, rankPercent: 91.2, todayPercent: 85.0, bracketData: 12, amount: 100, spec: "Fire", startTime: Date.now() - 90 * 86_400_000, report: { code: "TESTCODE1", fightID: 7 } },
           { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 90, spec: "Fire" }, // second +12 run
           { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 90, spec: "Fire" }, // duplicate: must not skew avg
           { historicalPercent: 76.4, rankPercent: 76.4, todayPercent: 70.0, bracketData: 11, amount: 80, spec: "Fire" },
@@ -180,6 +180,7 @@ try {
       // this-dungeon cell: two +12 runs (91.2, 60) -> best 91, avg/med 76
       assert.match(cells[2], /91b\s*76a\s*76m/, "per-run b/a/m for the dungeon");
       assert.match(cells[2], /@\+12/);
+      assert.match(cells[2], /· 3mo/, "best run's age shown");
       const ghost = await page.locator("tr.row", { hasText: "Ghost-Sargeras" }).innerText();
       assert.match(ghost, /no WCL character/);
     });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { esc, pctSpan, pctTag, bamHTML, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML } from "../docs/js/render.js";
+import { esc, pctSpan, pctTag, bamHTML, ageText, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML } from "../docs/js/render.js";
 import { playerFromResult } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669;
@@ -56,6 +56,34 @@ test("dungeonCellHTML states", () => {
   assert.match(dungeonCellHTML({ status: "OK", dungeonBest: { pct: 55, level: 9 } }, 12, AK), /only lower · best.*\+9/);
   assert.match(dungeonCellHTML({ status: "OK" }, 12, AK), /never logged/);
   assert.match(dungeonCellHTML({ status: "OK" }, 12, null), /—/);
+});
+
+test("ageText buckets", () => {
+  const now = 1_800_000_000_000;
+  const day = 86_400_000;
+  assert.equal(ageText(now - day / 2, now), "today");
+  assert.equal(ageText(now - 6 * day, now), "6d");
+  assert.equal(ageText(now - 44 * day, now), "44d");
+  assert.equal(ageText(now - 90 * day, now), "3mo");
+  assert.equal(ageText(undefined, now), null);
+  assert.equal(ageText(0, now), null);
+});
+
+test("dungeonCellHTML appends the run's age", () => {
+  const when = Date.now() - 90 * 86_400_000;
+  const ev = { status: "OK", dungeon: { pct: 76.4, level: 12, spec: "Fury", kind: "exact", when } };
+  assert.match(dungeonCellHTML(ev, 12, AK), /· 3mo/);
+  const noWhen = { status: "OK", dungeon: { pct: 76.4, level: 12, spec: "Fury", kind: "exact" } };
+  assert.doesNotMatch(dungeonCellHTML(noWhen, 12, AK), /· (today|\d)/);
+});
+
+test("matrix cells carry the run date in the tooltip", () => {
+  const p = playerFromResult({
+    classID: 4,
+    [`e${AK}`]: { ranks: [{ historicalPercent: 91.2, bracketData: 12, amount: 100, startTime: Date.UTC(2026, 5, 6), report: { code: "C0DE", fightID: 1 } }] },
+  });
+  const html = detailMatrixHTML(p, ENCOUNTERS, 12);
+  assert.match(html, /title="run on 2026-06-06 — open its report"/);
 });
 
 test("dungeonCellHTML shows run consistency via b/a/m", () => {

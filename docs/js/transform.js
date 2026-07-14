@@ -55,6 +55,7 @@ export function bestPerLevel(blob) {
     if (p > e.pct) {
       e.pct = p;
       e.spec = rank.spec || rank.bestSpec || undefined;
+      if (typeof rank.startTime === "number") e.when = rank.startTime; // ms
       // provenance: link the best run to its exact report fight
       if (rank.report?.code) {
         e.report = { code: rank.report.code, fightID: rank.report.fightID };
@@ -109,18 +110,18 @@ export function evaluate(player, encounterID, keyLevel) {
     if (encounterID) {
       const exact = atLevel?.dungeons?.[encounterID];
       if (exact) {
-        result.dungeon = { pct: exact.pct, level: keyLevel, spec: exact.spec, kind: "exact", pcts: exact.pcts };
+        result.dungeon = { pct: exact.pct, level: keyLevel, spec: exact.spec, kind: "exact", pcts: exact.pcts, ...(exact.when !== undefined && { when: exact.when }) };
       } else {
         const above = levelNums
           .filter((l) => l > keyLevel && levels[l].dungeons?.[encounterID])
           .sort((a, b) => a - b)[0];
         if (above !== undefined) {
           const d = levels[above].dungeons[encounterID];
-          result.dungeon = { pct: d.pct, level: above, spec: d.spec, kind: "above", pcts: d.pcts };
+          result.dungeon = { pct: d.pct, level: above, spec: d.spec, kind: "above", pcts: d.pcts, ...(d.when !== undefined && { when: d.when }) };
         } else {
           const fb = levels[keyLevel - 1]?.dungeons?.[encounterID];
           if (fb) {
-            result.dungeon = { pct: fb.pct, level: keyLevel - 1, spec: fb.spec, kind: "below", pcts: fb.pcts };
+            result.dungeon = { pct: fb.pct, level: keyLevel - 1, spec: fb.spec, kind: "below", pcts: fb.pcts, ...(fb.when !== undefined && { when: fb.when }) };
           }
         }
       }
