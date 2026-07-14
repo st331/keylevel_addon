@@ -87,6 +87,13 @@ tr.row:hover td{ background:var(--panel2) }
 tr.row td:first-child{ white-space:nowrap }
 
 .charname{ font-weight:650 }
+.role{
+  font-size:.64rem; font-weight:700; padding:.05rem .3rem; border-radius:4px;
+  border:1px solid var(--grid); vertical-align:middle;
+}
+.role-tank  { color:#7aa8d8 }
+.role-healer{ color:#3ddc84 }
+.role-dps   { color:#d87a7a }
 .wcl-link{
   font-size:.78rem; opacity:.55; padding:0 .15rem;
 }

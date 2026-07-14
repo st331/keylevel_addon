@@ -51,14 +51,25 @@ const ZONES = {
 };
 
 function characterResponse(query) {
-  // Foo exists on slug area52 (forces one slug retry from area-52);
-  // Ghost-Sargeras never exists.
+  // Foo/Priestess exist on slug area52 (forces one slug retry from area-52);
+  // Ghost-Sargeras never exists. Priestess is a healer: weak dps Key %,
+  // strong hps Key % — the site must detect her role and show the hps side.
+  const isHps = /metric: hps/.test(query);
   const out = {};
   const charRe = /(c\d+): character\(name: "([^"]+)", serverSlug: "([^"]+)"/g;
   let m;
   while ((m = charRe.exec(query)) !== null) {
     const [, alias, name, slug] = m;
-    if (name === "Foo" && slug === "area52") {
+    if (name === "Priestess" && slug === "area52") {
+      out[alias] = {
+        classID: 7,
+        [`e${AK}`]: { ranks: [isHps
+          ? { historicalPercent: 88.0, rankPercent: 88.0, bracketData: 12, amount: 999, spec: "Discipline", score: 400 }
+          : { historicalPercent: 20.0, rankPercent: 20.0, bracketData: 12, amount: 50, spec: "Discipline", score: 400 },
+        ] },
+        [`e${PIT}`]: { ranks: [] },
+      };
+    } else if (name === "Foo" && slug === "area52" && !isHps) {
       // realistic shape: the site must show the HISTORICAL (at-the-time)
       // Key %, not today's drifted value; plus an API-duplicated run
       out[alias] = {
@@ -101,7 +112,10 @@ function startFakeWcl() {
       }
       state.gqlRequests++;
       const { query } = JSON.parse(body);
-      if (!query.includes("worldData")) state.lastCharQuery = query;
+      if (!query.includes("worldData")) {
+        state.lastCharQuery = query;
+        (state.charQueries ??= []).push(query);
+      }
       res.end(JSON.stringify(query.includes("worldData") ? ZONES : characterResponse(query)));
     });
   });
@@ -140,7 +154,7 @@ async function newPage() {
   return page;
 }
 
-const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Ghost-Sargeras`;
+const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Ghost-Sargeras`;
 
 // ================= scenario 1: deployed site, zero setup ====================
 try {
@@ -161,7 +175,7 @@ try {
     await check("controls prefilled from the addon URL", async () => {
       assert.equal(await page.inputValue("#level"), "12");
       assert.equal(await page.inputValue("#region"), "us");
-      assert.match(await page.inputValue("#names"), /Foo-Area52\nGhost-Sargeras/);
+      assert.match(await page.inputValue("#names"), /Foo-Area52\nPriestess-Area52\nGhost-Sargeras/);
       assert.equal(await page.inputValue("#dungeon"), "Windrunner Spire");
     });
 
@@ -186,8 +200,22 @@ try {
     });
 
     await check("queries use the dps metric (Key %), not playerscore", async () => {
-      assert.match(wcl.state.lastCharQuery, /metric: dps, byBracket: true/);
-      assert.doesNotMatch(wcl.state.lastCharQuery, /playerscore/);
+      assert.match(wcl.state.charQueries[0], /metric: dps, byBracket: true/);
+      assert.ok(wcl.state.charQueries.every((q) => !/playerscore/.test(q)));
+    });
+
+    await check("healer detected: H chip + hps rankings shown", async () => {
+      const row = page.locator("tr.row", { hasText: "Priestess-Area52" });
+      assert.match(await row.innerHTML(), /role-healer/, "healer chip");
+      const text = await row.innerText();
+      assert.match(text, /88b/, "hps Key % shown");
+      assert.doesNotMatch(text, /20b/, "dps Key % replaced");
+      const fooRow = page.locator("tr.row", { hasText: "Foo-Area52" });
+      assert.match(await fooRow.innerHTML(), /role-dps/, "dps chip on Foo");
+      const hpsQueries = wcl.state.charQueries.filter((q) => /metric: hps/.test(q));
+      assert.equal(hpsQueries.length, 1, "exactly one hps refetch");
+      assert.match(hpsQueries[0], /Priestess/);
+      assert.doesNotMatch(hpsQueries[0], /Foo/, "dps players not refetched");
     });
 
     await check("no separate stats column exists", async () => {
@@ -200,7 +228,7 @@ try {
 
     await check("Foo sorts above Ghost", async () => {
       const names = await page.locator("tr.row .charname").allInnerTexts();
-      assert.deepEqual(names, ["Foo-Area52", "Ghost-Sargeras"]);
+      assert.deepEqual(names, ["Foo-Area52", "Priestess-Area52", "Ghost-Sargeras"]);
     });
 
     await check("clicking a row opens the dungeon × level matrix", async () => {

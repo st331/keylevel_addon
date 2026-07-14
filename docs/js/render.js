@@ -81,6 +81,18 @@ export function nameHTML(name, cls) {
   return `<span class="charname" style="color:${color}">${esc(name)}</span>`;
 }
 
+// Small role chip: T / H / D. Healers get a hint that their numbers are HPS.
+export function roleChipHTML(role) {
+  if (!role) return "";
+  const map = {
+    tank: ["T", "role-tank", "Tank"],
+    healer: ["H", "role-healer", "Healer — ranked on healing (HPS Key %)"],
+    dps: ["D", "role-dps", "DPS"],
+  };
+  const [letter, cls, title] = map[role] ?? map.dps;
+  return ` <span class="role ${cls}" title="${title}">${letter}</span>`;
+}
+
 // Small ↗ link to the character's full Warcraft Logs page.
 export function profileLinkHTML(region, slug, fullName) {
   if (!slug || !region) return "";
@@ -166,7 +178,7 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
 
   rows.forEach(({ fullName, player, slug, region, ev }, i) => {
     html += `<tr class="row" data-idx="${i}">
-      <td>${nameHTML(fullName, player?.class)}${profileLinkHTML(region, slug, fullName)}</td>
+      <td>${nameHTML(fullName, player?.class)}${roleChipHTML(player?.role)}${profileLinkHTML(region, slug, fullName)}</td>
       <td>${anyCellHTML(ev, level)}</td>
       <td>${dungeonCellHTML(ev, level, encounter?.id)}</td>
     </tr>

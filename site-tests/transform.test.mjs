@@ -4,6 +4,7 @@ import {
   bestPerLevel, pickPercent, playerFromResult, evaluate,
   tierClass, sortValue, encounterByName, classToken,
   windowLevels, average, median,
+  roleOfSpec, detectRole, hasRanks,
 } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669, MISTS = 62290;
@@ -202,6 +203,62 @@ test("windowLevels passes through when no level / missing player", () => {
   const missing = { missing: true };
   assert.equal(windowLevels(missing, 20), missing);
   assert.equal(windowLevels(null, 20), null);
+});
+
+test("roleOfSpec covers all role families", () => {
+  for (const s of ["Restoration", "Preservation", "Mistweaver", "Holy", "Discipline"]) {
+    assert.equal(roleOfSpec(s), "healer", s);
+  }
+  for (const s of ["Blood", "Vengeance", "Guardian", "Brewmaster", "Protection"]) {
+    assert.equal(roleOfSpec(s), "tank", s);
+  }
+  for (const s of ["Unholy", "Fire", "Augmentation", "Marksmanship", undefined]) {
+    assert.equal(roleOfSpec(s), "dps", String(s));
+  }
+});
+
+test("detectRole picks the role holding the most score", () => {
+  const healerMain = {
+    classID: 7,
+    e1: { ranks: [
+      { spec: "Discipline", score: 400, bracketData: 12, historicalPercent: 50, amount: 1 },
+      { spec: "Discipline", score: 380, bracketData: 11, historicalPercent: 50, amount: 2 },
+      { spec: "Shadow", score: 300, bracketData: 12, historicalPercent: 50, amount: 3 },
+    ] },
+  };
+  assert.equal(detectRole(healerMain), "healer");
+
+  const tankMain = {
+    classID: 11,
+    e1: { ranks: [{ spec: "Protection", score: 500, bracketData: 12, historicalPercent: 50, amount: 1 }] },
+    e2: { ranks: [{ spec: "Arms", score: 100, bracketData: 12, historicalPercent: 50, amount: 2 }] },
+  };
+  assert.equal(detectRole(tankMain), "tank");
+
+  assert.equal(detectRole({ classID: 4, e1: { ranks: [] } }), null, "no runs -> unknown");
+  assert.equal(detectRole(null), null);
+  // tie on score (both zero) falls to dps unless another role has more runs
+  const tie = { classID: 2, e1: { ranks: [
+    { spec: "Restoration", bracketData: 12, historicalPercent: 50, amount: 1 },
+    { spec: "Restoration", bracketData: 11, historicalPercent: 50, amount: 2 },
+    { spec: "Balance", bracketData: 12, historicalPercent: 50, amount: 3 },
+  ] } };
+  assert.equal(detectRole(tie), "healer", "zero scores -> run count decides");
+});
+
+test("playerFromResult carries the role; override wins", () => {
+  const result = {
+    classID: 7,
+    e1: { ranks: [{ spec: "Discipline", score: 400, bracketData: 12, historicalPercent: 50, amount: 1 }] },
+  };
+  assert.equal(playerFromResult(result).role, "healer");
+  assert.equal(playerFromResult(result, "dps").role, "dps", "explicit role wins");
+});
+
+test("hasRanks", () => {
+  assert.equal(hasRanks({ classID: 4, e1: { ranks: [{ bracketData: 12 }] } }), true);
+  assert.equal(hasRanks({ classID: 4, e1: { ranks: [] } }), false);
+  assert.equal(hasRanks(null), false);
 });
 
 test("average and median", () => {

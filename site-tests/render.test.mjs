@@ -95,6 +95,17 @@ test("dungeonCellHTML shows run consistency via b/a/m", () => {
   assert.match(html, /@\+12 · Fire/);
 });
 
+test("roleChipHTML", async () => {
+  const { roleChipHTML } = await import("../docs/js/render.js");
+  assert.match(roleChipHTML("healer"), /role-healer/);
+  assert.match(roleChipHTML("healer"), />H</);
+  assert.match(roleChipHTML("healer"), /HPS/, "healer tooltip explains the metric");
+  assert.match(roleChipHTML("tank"), />T</);
+  assert.match(roleChipHTML("dps"), />D</);
+  assert.equal(roleChipHTML(null), "");
+  assert.equal(roleChipHTML(undefined), "");
+});
+
 test("nameHTML uses class color and escapes", () => {
   const html = nameHTML("Foo<bar>-Realm", "MAGE");
   assert.match(html, /#3fc7eb/);
