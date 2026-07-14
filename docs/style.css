@@ -25,21 +25,6 @@ h1 { margin: 0 0 4px; font-size: 26px; }
 
 a { color: var(--accent); }
 
-details#setup {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-}
-details#setup summary { cursor: pointer; color: var(--muted); }
-#creds-state { color: var(--accent); }
-.setup-body p { color: var(--muted); margin: 10px 0; }
-.cred-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.cred-row input { flex: 1 1 180px; }
-details.advanced { margin-top: 14px; }
-details.advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-
 .controls { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .control { display: flex; flex-direction: column; gap: 4px; }
 .control.grow { flex: 1; min-width: 220px; }
