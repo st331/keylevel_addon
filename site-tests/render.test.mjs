@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { esc, pctSpan, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML } from "../docs/js/render.js";
+import { esc, pctSpan, pctTag, bamHTML, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML } from "../docs/js/render.js";
 import { playerFromResult } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669;
@@ -24,9 +24,24 @@ test("pctSpan floors and colors", () => {
   assert.equal(pctSpan(99.6), '<span class="pct tier-pink">99%</span>');
 });
 
+test("pctTag suffixes and bamHTML best/avg/median", () => {
+  assert.equal(pctTag(99.6, "b"), '<span class="pct tier-pink">99<i class="sfx">b</i></span>');
+  const html = bamHTML(91.2, [91.2, 71.0]);
+  assert.match(html, />91<i class="sfx">b</, "best");
+  assert.match(html, />81<i class="sfx">a</, "average of 91.2 and 71");
+  assert.match(html, />81<i class="sfx">m</, "median");
+  const single = bamHTML(91.2, undefined);
+  assert.match(single, />91<i class="sfx">b<.*>91<i class="sfx">a<.*>91<i class="sfx">m</,
+    "no run list -> best repeated");
+});
+
 test("anyCellHTML states", () => {
   assert.match(anyCellHTML({ status: "NO_WCL" }, 12), /no WCL character/);
-  assert.match(anyCellHTML({ status: "OK", anyAtLevel: { pct: 91.2, runs: 2 } }, 12), /91%.*2 dungeons/);
+  const at = anyCellHTML({ status: "OK", anyAtLevel: { pct: 91.2, runs: 2, pcts: [91.2, 71.0] } }, 12);
+  assert.match(at, />91<i class="sfx">b</);
+  assert.match(at, />81<i class="sfx">a</);
+  assert.match(at, />81<i class="sfx">m</);
+  assert.match(at, /2 dungeons/);
   assert.match(anyCellHTML({ status: "OK", anyBest: { pct: 80, level: 14 } }, 12), /none at \+12 · best.*\+14/);
   assert.match(anyCellHTML({ status: "OK" }, 12), /no logs \+8–\+16/, "no-logs message names the window");
   assert.match(anyCellHTML({ status: "OK", anyBest: { pct: 80, level: 14 } }, null), /best:.*\+14/);
@@ -41,6 +56,15 @@ test("dungeonCellHTML states", () => {
   assert.match(dungeonCellHTML({ status: "OK", dungeonBest: { pct: 55, level: 9 } }, 12, AK), /only lower · best.*\+9/);
   assert.match(dungeonCellHTML({ status: "OK" }, 12, AK), /never logged/);
   assert.match(dungeonCellHTML({ status: "OK" }, 12, null), /—/);
+});
+
+test("dungeonCellHTML shows run consistency via b/a/m", () => {
+  const ev = { status: "OK", dungeon: { pct: 91.2, level: 12, spec: "Fire", kind: "exact", pcts: [91.2, 60] } };
+  const html = dungeonCellHTML(ev, 12, AK);
+  assert.match(html, />91<i class="sfx">b</);
+  assert.match(html, />76<i class="sfx">a</, "average of 91.2 and 60");
+  assert.match(html, />76<i class="sfx">m</);
+  assert.match(html, /@\+12 · Fire/);
 });
 
 test("nameHTML uses class color and escapes", () => {
@@ -100,31 +124,14 @@ test("summaryHTML sorts best-first, includes detail rows and profile links", () 
   const ghostIdx = html.indexOf("Ghost-Sargeras");
   assert.ok(aliceIdx >= 0 && ghostIdx >= 0);
   assert.ok(aliceIdx < ghostIdx, "Alice sorts above the missing player");
-  assert.match(html, /Best @\+12/);
-  assert.match(html, /Avg · Med @\+12/, "summary stats column present");
+  assert.match(html, /Any dungeon @\+12/);
   assert.match(html, /want \+12/);
   assert.match(html, /detail-row/);
-  assert.match(html, /colspan="4"/, "detail row spans the stats column too");
+  assert.match(html, /colspan="3"/);
   assert.match(html, /no WCL character/);
   assert.match(html, /character\/us\/area-52\/Alice/, "profile link present");
-});
-
-test("statsCellHTML: avg · med at the target level, dashes otherwise", async () => {
-  const { statsCellHTML } = await import("../docs/js/render.js");
-  // alice @12: AK 91.2 + CoT 71.0 -> avg 81.1 -> 81%, median 81.1 -> 81%
-  const cell = statsCellHTML(alice, 12);
-  const pcts = [...cell.matchAll(/>(\d+)%</g)].map((m) => m[1]);
-  assert.deepEqual(pcts, ["81", "81"]);
-  assert.match(statsCellHTML(alice, 13), /—/, "no data at that level");
-  assert.match(statsCellHTML(ghost, 12), /—/, "missing player");
-  assert.match(statsCellHTML(alice, null), /—/, "no level context");
-});
-
-test("summaryHTML without a level omits the stats column", () => {
-  const html = summaryHTML(
-    [{ fullName: "Alice-Area52", player: alice, slug: "area-52", region: "us" }],
-    { level: null, encounter: null, encounters: ENCOUNTERS },
-  );
-  assert.doesNotMatch(html, /Avg · Med/);
-  assert.match(html, /colspan="3"/);
+  // alice @12: AK 91.2 + CoT 71.0 -> 91b 81a 81m inline in the any-dungeon cell
+  assert.match(html, />91<i class="sfx">b</);
+  assert.match(html, />81<i class="sfx">a</);
+  assert.match(html, />81<i class="sfx">m</);
 });

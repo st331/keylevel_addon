@@ -63,6 +63,7 @@ function characterResponse(query) {
         classID: 4,
         [`e${AK}`]: { ranks: [
           { rankPercent: 91.2, bracketData: 12, spec: "Fire" },
+          { rankPercent: 60.0, bracketData: 12, spec: "Fire" }, // second +12 run: avg/med differ from best
           { rankPercent: 76.4, bracketData: 11, spec: "Fire" },
           { rankPercent: 50.0, bracketData: 2, spec: "Fire" }, // outside the ±4 window at +12
         ] },
@@ -168,22 +169,23 @@ try {
     });
 
     await check("results render (exact-level hit + missing character)", async () => {
-      const foo = await page.locator("tr.row", { hasText: "Foo-Area52" }).innerText();
-      assert.match(foo, /91%/);
-      assert.match(foo, /@\+12/);
-      assert.match(foo, /1 dungeon/);
+      const cells = await page.locator("tr.row", { hasText: "Foo-Area52" }).locator("td").allInnerTexts();
+      // any-dungeon cell: only AK logged at +12 (best 91.2) -> 91b 91a 91m (1 dungeon)
+      assert.match(cells[1], /91b\s*91a\s*91m/, "b/a/m inline in the any-dungeon cell");
+      assert.match(cells[1], /1 dungeon/);
+      // this-dungeon cell: two +12 runs (91.2, 60) -> best 91, avg/med 76
+      assert.match(cells[2], /91b\s*76a\s*76m/, "per-run b/a/m for the dungeon");
+      assert.match(cells[2], /@\+12/);
       const ghost = await page.locator("tr.row", { hasText: "Ghost-Sargeras" }).innerText();
       assert.match(ghost, /no WCL character/);
     });
 
-    await check("summary shows the avg · med column at the target level", async () => {
+    await check("no separate stats column exists", async () => {
       const head = await page.locator("table.summary thead").innerText();
-      assert.match(head, /avg · med @\+12/i);
-      // Foo has only AK (91.2%) at +12 -> avg = med = 91%
-      const cells = await page.locator("tr.row", { hasText: "Foo-Area52" }).locator("td").allInnerTexts();
-      assert.match(cells[2], /91%\s*·\s*91%/, "avg · med cell");
-      const ghostCells = await page.locator("tr.row", { hasText: "Ghost-Sargeras" }).locator("td").allInnerTexts();
-      assert.match(ghostCells[2], /—/, "missing player shows a dash");
+      assert.doesNotMatch(head, /avg · med/i);
+      assert.match(head, /any dungeon @\+12/i);
+      const headers = await page.locator("table.summary > thead th").count();
+      assert.equal(headers, 3, "three columns total");
     });
 
     await check("Foo sorts above Ghost", async () => {
@@ -228,7 +230,7 @@ try {
       await page.waitForFunction(() =>
         document.querySelector("#status")?.textContent?.startsWith("done"));
       const foo = await page.locator("tr.row", { hasText: "Foo-Area52" }).innerText();
-      assert.match(foo, /99%/);
+      assert.match(foo, /99b/);
       assert.match(foo, /@\+14 \(higher\)/);
     });
 
