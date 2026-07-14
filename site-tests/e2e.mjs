@@ -64,7 +64,7 @@ function characterResponse(query) {
       out[alias] = {
         classID: 4,
         [`e${AK}`]: { ranks: [
-          { historicalPercent: 91.2, rankPercent: 91.2, todayPercent: 85.0, bracketData: 12, amount: 100, spec: "Fire" },
+          { historicalPercent: 91.2, rankPercent: 91.2, todayPercent: 85.0, bracketData: 12, amount: 100, spec: "Fire", report: { code: "TESTCODE1", fightID: 7 } },
           { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 90, spec: "Fire" }, // second +12 run
           { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 90, spec: "Fire" }, // duplicate: must not skew avg
           { historicalPercent: 76.4, rankPercent: 76.4, todayPercent: 70.0, bracketData: 11, amount: 80, spec: "Fire" },
@@ -208,6 +208,11 @@ try {
       assert.match(text, /Windrunner Spire/);
       assert.match(text, /Pit of Saron/);
       assert.match(text, /99%/, "the +14 pit run shows in the matrix");
+    });
+
+    await check("matrix percentiles link to their source report fight", async () => {
+      const href = await page.locator("tr.detail-row.open a.runlink").first().getAttribute("href");
+      assert.equal(href, "https://www.warcraftlogs.com/reports/TESTCODE1?fight=7&type=damage-done");
     });
 
     await check("matrix hides keys outside the ±4 window and shows avg/median", async () => {

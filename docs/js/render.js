@@ -103,7 +103,12 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
       const d = levels[l]?.dungeons?.[e.id];
       if (d) {
         any = true;
-        row += `<td class="${l === targetLevel ? "target-level" : ""}">${pctSpan(d.pct)}</td>`;
+        // each percentile links to the exact report fight it came from
+        const cell = d.report?.code
+          ? `<a class="runlink" target="_blank" rel="noopener" title="open this run's report"
+               href="https://www.warcraftlogs.com/reports/${encodeURIComponent(d.report.code)}?fight=${Number(d.report.fightID) || 1}&type=damage-done">${pctSpan(d.pct)}</a>`
+          : pctSpan(d.pct);
+        row += `<td class="${l === targetLevel ? "target-level" : ""}">${cell}</td>`;
       } else {
         row += `<td class="${l === targetLevel ? "target-level" : ""}"><span class="muted">·</span></td>`;
       }
