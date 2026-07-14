@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { esc, pctSpan, anyCellHTML, dungeonCellHTML, nameHTML, detailMatrixHTML, summaryHTML } from "../docs/js/render.js";
+import { esc, pctSpan, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML } from "../docs/js/render.js";
 import { playerFromResult } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669;
@@ -28,8 +28,9 @@ test("anyCellHTML states", () => {
   assert.match(anyCellHTML({ status: "NO_WCL" }, 12), /no WCL character/);
   assert.match(anyCellHTML({ status: "OK", anyAtLevel: { pct: 91.2, runs: 2 } }, 12), /91%.*2 dungeons/);
   assert.match(anyCellHTML({ status: "OK", anyBest: { pct: 80, level: 14 } }, 12), /none at \+12 · best.*\+14/);
-  assert.match(anyCellHTML({ status: "OK" }, 12), /no M\+ logs/);
+  assert.match(anyCellHTML({ status: "OK" }, 12), /no logs \+8–\+16/, "no-logs message names the window");
   assert.match(anyCellHTML({ status: "OK", anyBest: { pct: 80, level: 14 } }, null), /best:.*\+14/);
+  assert.match(anyCellHTML({ status: "OK" }, null), /no M\+ logs/);
 });
 
 test("dungeonCellHTML states", () => {
@@ -57,11 +58,41 @@ test("detailMatrixHTML renders matrix with target column and skips empty dungeon
   assert.match(detailMatrixHTML(playerFromResult({ classID: 4 }), ENCOUNTERS, 12), /No Mythic\+ logs/);
 });
 
-test("summaryHTML sorts best-first and includes detail rows", () => {
+test("detailMatrixHTML appends per-level average and median rows", () => {
+  // AK 91.2 + CoT 71.0 at +12 -> avg 81.1 -> shown 81%, median 81.1 -> 81%
+  const html = detailMatrixHTML(alice, ENCOUNTERS, 12);
+  assert.match(html, /Average/);
+  assert.match(html, /Median/);
+  const statsSection = html.slice(html.indexOf("Average"));
+  assert.match(statsSection, /81%/, "average of 91.2 and 71.0");
+});
+
+test("detailMatrixHTML stats with distinct avg vs median", () => {
+  const p = playerFromResult({
+    classID: 4,
+    [`e${AK}`]: { ranks: [{ rankPercent: 10, bracketData: 12 }] },
+    [`e${COT}`]: { ranks: [{ rankPercent: 20, bracketData: 12 }] },
+    e99: { ranks: [{ rankPercent: 90, bracketData: 12 }] },
+  });
+  const encs = [...ENCOUNTERS, { id: 99, name: "Third Dungeon" }];
+  const html = detailMatrixHTML(p, encs, 12);
+  const statsSection = html.slice(html.indexOf("Average"));
+  assert.match(statsSection, /40%/, "average (10+20+90)/3 = 40");
+  assert.match(statsSection.slice(statsSection.indexOf("Median")), /20%/, "median = 20");
+});
+
+test("profileLinkHTML builds a WCL character link", () => {
+  const html = profileLinkHTML("us", "area-52", "Foo-Area52");
+  assert.match(html, /href="https:\/\/www\.warcraftlogs\.com\/character\/us\/area-52\/Foo"/);
+  assert.match(html, /target="_blank"/);
+  assert.equal(profileLinkHTML("us", null, "Foo-Area52"), "", "no slug -> no link");
+});
+
+test("summaryHTML sorts best-first, includes detail rows and profile links", () => {
   const html = summaryHTML(
     [
-      { fullName: "Ghost-Sargeras", player: ghost },
-      { fullName: "Alice-Area52", player: alice },
+      { fullName: "Ghost-Sargeras", player: ghost, slug: "sargeras", region: "us" },
+      { fullName: "Alice-Area52", player: alice, slug: "area-52", region: "us" },
     ],
     { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS },
   );
@@ -73,4 +104,5 @@ test("summaryHTML sorts best-first and includes detail rows", () => {
   assert.match(html, /want \+12/);
   assert.match(html, /detail-row/);
   assert.match(html, /no WCL character/);
+  assert.match(html, /character\/us\/area-52\/Alice/, "profile link present");
 });

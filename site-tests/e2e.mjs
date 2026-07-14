@@ -64,6 +64,7 @@ function characterResponse(query) {
         [`e${AK}`]: { ranks: [
           { rankPercent: 91.2, bracketData: 12, spec: "Fire" },
           { rankPercent: 76.4, bracketData: 11, spec: "Fire" },
+          { rankPercent: 50.0, bracketData: 2, spec: "Fire" }, // outside the ±4 window at +12
         ] },
         [`e${PIT}`]: { ranks: [{ rankPercent: 99.4, bracketData: 14, spec: "Fire" }] },
       };
@@ -188,6 +189,29 @@ try {
       assert.match(text, /99%/, "the +14 pit run shows in the matrix");
     });
 
+    await check("matrix hides keys outside the ±4 window and shows avg/median", async () => {
+      const text = await page.locator("tr.detail-row.open").innerText();
+      assert.doesNotMatch(text, /\+2\b/, "the +2 log is outside +8..+16");
+      assert.doesNotMatch(text, /50%/, "its percentile is gone too");
+      assert.match(text, /average/i);
+      assert.match(text, /median/i);
+    });
+
+    await check("status advertises the key window", async () => {
+      assert.match(await page.locator("#status").innerText(), /\+8–\+16/);
+    });
+
+    await check("names link to the Warcraft Logs profile", async () => {
+      const href = await page.locator("tr.row a.wcl-link").first().getAttribute("href");
+      assert.equal(href, "https://www.warcraftlogs.com/character/us/area52/Foo");
+    });
+
+    await check("address bar reflects the current lookup (shareable)", async () => {
+      const url = new URL(page.url());
+      assert.equal(url.searchParams.get("level"), "12");
+      assert.match(url.searchParams.get("chars"), /Foo-Area52/);
+    });
+
     await check("higher-level run counts for the dungeon column", async () => {
       await page.selectOption("#dungeon", "Pit of Saron");
       await page.click("#lookup");
@@ -200,6 +224,25 @@ try {
 
     await check("token fetched once and cached", async () => {
       assert.equal(wcl.state.tokenRequests, 1);
+    });
+
+    await page.context().close();
+  }
+
+  // ============ scenario 1b: plain visit (no params) ========================
+  {
+    const page = await newPage();
+    await page.goto(`http://127.0.0.1:${deployedSrv.port}/index.html`);
+
+    await check("plain visit: key level defaults to 20", async () => {
+      assert.equal(await page.inputValue("#level"), "20");
+    });
+
+    await check("plain visit: dungeon dropdown fills without a lookup", async () => {
+      await page.waitForFunction(() =>
+        document.querySelectorAll("#dungeon option").length > 1, null, { timeout: 10_000 });
+      const options = await page.locator("#dungeon option").allInnerTexts();
+      assert.ok(options.includes("Windrunner Spire"), "season dungeons listed on load");
     });
 
     await page.context().close();

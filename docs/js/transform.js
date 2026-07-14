@@ -117,6 +117,30 @@ export function evaluate(player, encounterID, keyLevel) {
   return result;
 }
 
+// Restrict a player's levels to the relevant window around the target key
+// level: [level - spread, level + spread]. Levels outside are noise for the
+// invite decision and are dropped everywhere (summary + details).
+export function windowLevels(player, level, spread = 4) {
+  if (!player || player.missing || !level) return player;
+  const levels = {};
+  for (const [l, entry] of Object.entries(player.levels ?? {})) {
+    const n = Number(l);
+    if (n >= level - spread && n <= level + spread) levels[n] = entry;
+  }
+  return { ...player, levels };
+}
+
+export function average(nums) {
+  return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+}
+
+export function median(nums) {
+  if (!nums.length) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
 // Warcraft Logs color tier for a percentile.
 export function tierClass(pct) {
   if (pct >= 100) return "tier-gold";

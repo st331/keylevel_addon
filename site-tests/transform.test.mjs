@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   bestPerLevel, pickPercent, playerFromResult, evaluate,
   tierClass, sortValue, encounterByName, classToken,
+  windowLevels, average, median,
 } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669, MISTS = 62290;
@@ -135,4 +136,42 @@ test("classToken", () => {
   assert.equal(classToken(4), "MAGE");
   assert.equal(classToken(13), "EVOKER");
   assert.equal(classToken(999), undefined);
+});
+
+test("windowLevels keeps only levels within ±4 of the target", () => {
+  const p = playerFromResult({
+    classID: 4,
+    [`e${AK}`]: { ranks: [
+      { rankPercent: 50, bracketData: 2 },
+      { rankPercent: 60, bracketData: 16 },
+      { rankPercent: 70, bracketData: 20 },
+      { rankPercent: 80, bracketData: 24 },
+      { rankPercent: 90, bracketData: 25 },
+    ] },
+  });
+  const w = windowLevels(p, 20);
+  assert.deepEqual(Object.keys(w.levels).map(Number).sort((a, b) => a - b), [16, 20, 24],
+    "keeps [16..24], drops 2 and 25");
+  assert.equal(p.levels[2].best, 50, "original untouched");
+  // evaluation then only sees the window
+  const ev = evaluate(w, AK, 20);
+  assert.equal(ev.dungeon.level, 20);
+  assert.equal(ev.anyBest, undefined, "anyAtLevel present instead");
+});
+
+test("windowLevels passes through when no level / missing player", () => {
+  const p = playerFromResult({ classID: 4, [`e${AK}`]: { ranks: [{ rankPercent: 50, bracketData: 2 }] } });
+  assert.equal(windowLevels(p, null), p);
+  const missing = { missing: true };
+  assert.equal(windowLevels(missing, 20), missing);
+  assert.equal(windowLevels(null, 20), null);
+});
+
+test("average and median", () => {
+  assert.equal(average([]), null);
+  assert.equal(average([10, 20]), 15);
+  assert.equal(median([]), null);
+  assert.equal(median([7]), 7);
+  assert.equal(median([1, 3, 100]), 3, "median resists outliers");
+  assert.equal(median([1, 2, 3, 4]), 2.5);
 });
