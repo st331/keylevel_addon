@@ -19,14 +19,17 @@ function round1(x) {
 
 // An encounterRankings blob (metric: dps, byBracket: true):
 //   { bestAmount, totalKills, metric,
-//     ranks: [ { rankPercent, todayPercent, bracketData, amount, spec, ... } ] }
+//     ranks: [ { rankPercent, historicalPercent, todayPercent, bracketData,
+//               amount, spec, ... } ] }
 // bracketData is the keystone level of that run. With byBracket: true the
-// percentiles are computed within that key level — this is the "Key %"
-// column from a report's DPS tab. The report column tracks the up-to-date
-// comparison, so todayPercent is preferred over the locked-in historical
-// rankPercent (verified against live reports).
+// percentiles are computed within that key level — the "Key %" from a
+// report's DPS tab. We use the HISTORICAL percentile (frozen as of the day
+// the run happened), not todayPercent: gear inflation over a season pushes
+// everyone's absolute dps up, so re-ranking an old run against today's
+// population systematically understates it. "What it was then" is the
+// fairer skill signal.
 export function pickPercent(rank) {
-  const pct = rank?.bracketPercent ?? rank?.todayPercent ?? rank?.rankPercent;
+  const pct = rank?.historicalPercent ?? rank?.rankPercent;
   return typeof pct === "number" ? pct : null;
 }
 

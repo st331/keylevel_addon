@@ -59,18 +59,18 @@ function characterResponse(query) {
   while ((m = charRe.exec(query)) !== null) {
     const [, alias, name, slug] = m;
     if (name === "Foo" && slug === "area52") {
-      // realistic shape: historical rankPercent differs from todayPercent
-      // (the site must show today's Key %), plus an API-duplicated run
+      // realistic shape: the site must show the HISTORICAL (at-the-time)
+      // Key %, not today's drifted value; plus an API-duplicated run
       out[alias] = {
         classID: 4,
         [`e${AK}`]: { ranks: [
-          { rankPercent: 93.5, todayPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire" },
-          { rankPercent: 62.0, todayPercent: 60.0, bracketData: 12, amount: 90, spec: "Fire" }, // second +12 run
-          { rankPercent: 62.0, todayPercent: 60.0, bracketData: 12, amount: 90, spec: "Fire" }, // duplicate: must not skew avg
-          { rankPercent: 78.0, todayPercent: 76.4, bracketData: 11, amount: 80, spec: "Fire" },
-          { rankPercent: 52.0, todayPercent: 50.0, bracketData: 2, amount: 70, spec: "Fire" }, // outside the ±4 window at +12
+          { historicalPercent: 91.2, rankPercent: 91.2, todayPercent: 85.0, bracketData: 12, amount: 100, spec: "Fire" },
+          { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 90, spec: "Fire" }, // second +12 run
+          { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 90, spec: "Fire" }, // duplicate: must not skew avg
+          { historicalPercent: 76.4, rankPercent: 76.4, todayPercent: 70.0, bracketData: 11, amount: 80, spec: "Fire" },
+          { historicalPercent: 50.0, rankPercent: 50.0, todayPercent: 45.0, bracketData: 2, amount: 70, spec: "Fire" }, // outside the ±4 window at +12
         ] },
-        [`e${PIT}`]: { ranks: [{ rankPercent: 99.9, todayPercent: 99.4, bracketData: 14, amount: 120, spec: "Fire" }] },
+        [`e${PIT}`]: { ranks: [{ historicalPercent: 99.4, rankPercent: 99.4, todayPercent: 97.0, bracketData: 14, amount: 120, spec: "Fire" }] },
       };
     } else {
       out[alias] = null;
