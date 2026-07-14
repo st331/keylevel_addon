@@ -48,26 +48,34 @@ No companion process, no /reload loop, no data files.
 Copy the `KeyLevelLogs/` folder into
 `World of Warcraft/_retail_/Interface/AddOns/`.
 
-### 2. Website
+### 2. Website (zero setup for visitors)
 
-The site is static and lives in `docs/`. To host it under your account:
+The site is static (`docs/`) and is published by the
+`.github/workflows/pages.yml` workflow, which injects the Warcraft Logs
+client secret from a **GitHub Actions secret** at deploy time — the secret
+never appears in the repo source or its history. Repo-owner setup, one time:
 
-1. In this repo on GitHub: **Settings → Pages → Source: "Deploy from a
-   branch" → Branch: `main`, folder `/docs`** → Save.
-2. Your site appears at `https://<user>.github.io/keylevel_addon/` within a
-   minute or two.
-
-(If your Pages URL differs from the default baked into the addon, set it
-once in game: `/kll site https://<user>.github.io/keylevel_addon/`.)
-
-### 3. Warcraft Logs API key (one time, ~1 minute)
-
-1. Create a free API client at
+1. **Settings → Secrets and variables → Actions → New repository secret**:
+   name `WCL_CLIENT_SECRET`, value = the client secret from
    [warcraftlogs.com/api/clients](https://www.warcraftlogs.com/api/clients/)
-   — any name, no redirect URL, leave "Public Client" unchecked.
-2. Open your site, expand **Setup**, paste the client id + secret, Save.
-   They are stored in your browser's localStorage only and sent only to
-   warcraftlogs.com.
+   for the client whose id is baked into `docs/js/config.js`.
+2. **Settings → Pages → Source: "GitHub Actions"**.
+3. Push/merge to `main` (or run the "Deploy site" workflow manually). The
+   site appears at `https://<user>.github.io/keylevel_addon/`.
+
+Visitors (you and your friends) need **no setup at all** — open the link,
+paste names, done. If the secret is ever missing (e.g. a fork), the site
+falls back to a one-click "Connect Warcraft Logs" sign-in, and an Advanced
+panel accepts manual credentials.
+
+**Security model, honestly:** GitHub Actions secrets are encrypted and never
+served to visitors, but the *deployed page* must send the secret to
+warcraftlogs.com, so a visitor who digs through the site's JS can extract
+it. For this API that only exposes your client's shared 3,600 points/hour
+quota — it cannot access your account or private logs. If it's ever abused,
+regenerate the secret on the WCL clients page, update the Actions secret,
+and re-run the deploy. A test guards against a real secret ever being
+committed to the repo itself.
 
 ## Using it
 
@@ -114,10 +122,12 @@ Everything testable outside the game is tested outside the game:
   evaluation (exact / higher / one-below / only-lower / never), WCL response
   transforms, realm-slug guessing, name parsing, HTML rendering and sorting.
 - **Website end-to-end** (`site-tests/e2e.mjs`): a real Chromium loads the
-  actual site against a fake Warcraft Logs server and verifies the whole
-  flow — arriving via an addon-generated URL, auto-lookup, rendered
-  percentiles, "no WCL character" handling, the detail matrix, and that
-  credentials never leave the page. (`npm install` once; CI runs it on every
+  actual site against a fake Warcraft Logs server and verifies all three
+  auth modes — zero-setup with the deploy-injected secret, the PKCE
+  "Connect Warcraft Logs" round-trip (with server-side S256 verification),
+  and manual credentials — plus the whole lookup flow: arriving via an
+  addon-generated URL, auto-lookup, rendered percentiles, "no WCL character"
+  handling, and the detail matrix. (`npm install` once; CI runs it on every
   push.)
 
 The only things that can't be verified outside the game are the live Blizzard

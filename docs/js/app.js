@@ -1,32 +1,46 @@
 // app.js — DOM wiring for the KeyLevelLogs lookup page.
+//
+// Auth: primary flow is Warcraft Logs "Public Client" PKCE — visitors click
+// Connect once and sign in with their own (free) WCL account. No secret
+// exists anywhere. A manual client-id/secret mode remains as an advanced
+// fallback (credentials stay in that browser's localStorage).
 
 import { parseNamesInput, parseFullName, slugCandidates } from "./slugs.js";
-import { getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
+import {
+  getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError,
+  makeVerifier, challengeFromVerifier, buildAuthorizeURL, exchangeCode, refreshTokens,
+  DEFAULT_TOKEN_URL, DEFAULT_AUTH_URL, DEFAULT_API_URL,
+} from "./wcl.js";
 import { playerFromResult, encounterByName } from "./transform.js";
 import { summaryHTML } from "./render.js";
+import { EMBEDDED_CLIENT_ID, embeddedCredentials } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
 
-// The "MPlus Dashboard" WCL API client id. Client ids are public
-// identifiers (useless without the secret); the secret is never stored in
-// this repo — paste it in Setup once and it stays in your browser.
-const DEFAULT_CLIENT_ID = "a1fd073d-42da-47f6-89da-9c78dec3c75a";
+// The "MPlus Dashboard" WCL API client id (public identifier; also used for
+// the PKCE fallback when no secret was injected at deploy time).
+const DEFAULT_CLIENT_ID = EMBEDDED_CLIENT_ID;
 
-// localStorage keys (kllTokenUrl/kllApiUrl exist so tests — or a future
-// proxy — can repoint the endpoints)
+// localStorage keys (kllTokenUrl/kllAuthUrl/kllApiUrl exist so tests — or a
+// future proxy — can repoint the endpoints)
 const LS = {
   clientId: "kllClientId",
   clientSecret: "kllClientSecret",
   token: "kllToken",
   tokenExpires: "kllTokenExpires",
+  refreshToken: "kllRefreshToken",
   zoneCache: "kllZoneCache",
   region: "kllRegion",
   tokenUrl: "kllTokenUrl",
+  authUrl: "kllAuthUrl",
   apiUrl: "kllApiUrl",
 };
+// sessionStorage keys for the OAuth round-trip
+const SS = { verifier: "kllVerifier", state: "kllOAuthState", pendingQuery: "kllPendingQuery" };
 
 const endpoints = () => ({
   tokenUrl: localStorage.getItem(LS.tokenUrl) || DEFAULT_TOKEN_URL,
+  authUrl: localStorage.getItem(LS.authUrl) || DEFAULT_AUTH_URL,
   apiUrl: localStorage.getItem(LS.apiUrl) || DEFAULT_API_URL,
 });
 
@@ -36,22 +50,118 @@ function setStatus(msg, isError) {
   el.className = isError ? "status error" : "status";
 }
 
-// ---------------------------------------------------------------- token
+// ---------------------------------------------------------------- auth
+
+function storeTokens({ token, refreshToken, expiresAt }) {
+  localStorage.setItem(LS.token, token);
+  localStorage.setItem(LS.tokenExpires, String(expiresAt));
+  if (refreshToken) localStorage.setItem(LS.refreshToken, refreshToken);
+}
+
+function clearTokens() {
+  for (const k of [LS.token, LS.tokenExpires, LS.refreshToken]) localStorage.removeItem(k);
+}
+
+function isConnected() {
+  return Boolean(embeddedCredentials()
+    || localStorage.getItem(LS.token) || localStorage.getItem(LS.refreshToken)
+    || (localStorage.getItem(LS.clientId) && localStorage.getItem(LS.clientSecret)));
+}
+
+// The exact URI registered on the WCL client (origin + path, no query).
+function redirectUri() {
+  return location.origin + location.pathname.replace(/index\.html$/, "");
+}
+
+async function connect() {
+  // stash the addon-provided query so it survives the OAuth round-trip
+  sessionStorage.setItem(SS.pendingQuery, location.search);
+  const verifier = makeVerifier();
+  const state = makeVerifier(32);
+  sessionStorage.setItem(SS.verifier, verifier);
+  sessionStorage.setItem(SS.state, state);
+  const challenge = await challengeFromVerifier(verifier);
+  location.href = buildAuthorizeURL({
+    authUrl: endpoints().authUrl,
+    clientId: DEFAULT_CLIENT_ID,
+    redirectUri: redirectUri(),
+    state,
+    challenge,
+  });
+}
+
+// Handles arriving back from warcraftlogs.com with ?code=...&state=...
+// Returns true if a sign-in was completed.
+async function handleOAuthReturn() {
+  const p = new URLSearchParams(location.search);
+  const code = p.get("code");
+  if (!code) return false;
+
+  const expected = sessionStorage.getItem(SS.state);
+  const verifier = sessionStorage.getItem(SS.verifier);
+  sessionStorage.removeItem(SS.state);
+  sessionStorage.removeItem(SS.verifier);
+  const pending = sessionStorage.getItem(SS.pendingQuery) ?? "";
+  sessionStorage.removeItem(SS.pendingQuery);
+  // restore the pre-signin URL either way
+  history.replaceState(null, "", location.pathname + pending);
+
+  if (!expected || p.get("state") !== expected || !verifier) {
+    setStatus("sign-in state mismatch — please try Connect again", true);
+    return false;
+  }
+  try {
+    setStatus("finishing Warcraft Logs sign-in…");
+    storeTokens(await exchangeCode({
+      tokenUrl: endpoints().tokenUrl,
+      clientId: DEFAULT_CLIENT_ID,
+      code,
+      redirectUri: redirectUri(),
+      verifier,
+    }));
+    setStatus("connected to Warcraft Logs ✓");
+    return true;
+  } catch (e) {
+    setStatus(e.message, true);
+    return false;
+  }
+}
 
 async function ensureToken(force) {
   const cached = localStorage.getItem(LS.token);
   const expires = Number(localStorage.getItem(LS.tokenExpires) || 0);
   if (!force && cached && Date.now() < expires - 60_000) return cached;
 
-  const clientId = localStorage.getItem(LS.clientId);
-  const clientSecret = localStorage.getItem(LS.clientSecret);
-  if (!clientId || !clientSecret) {
-    throw new WclError("no API credentials yet — open Setup below and paste your client id/secret");
+  const refresh = localStorage.getItem(LS.refreshToken);
+  if (refresh) {
+    try {
+      const tokens = await refreshTokens({
+        tokenUrl: endpoints().tokenUrl,
+        clientId: DEFAULT_CLIENT_ID,
+        refreshToken: refresh,
+      });
+      storeTokens(tokens);
+      return tokens.token;
+    } catch {
+      clearTokens(); // fall through to other options
+    }
   }
-  const { token, expiresAt } = await getToken({ clientId, clientSecret, ...endpoints() });
-  localStorage.setItem(LS.token, token);
-  localStorage.setItem(LS.tokenExpires, String(expiresAt));
-  return token;
+
+  // manual (advanced) credentials override the deploy-time embedded ones
+  const manualId = localStorage.getItem(LS.clientId);
+  const manualSecret = localStorage.getItem(LS.clientSecret);
+  const creds = (manualId && manualSecret)
+    ? { clientId: manualId, clientSecret: manualSecret }
+    : embeddedCredentials();
+  if (creds) {
+    const { token, expiresAt } = await getToken({ ...creds, ...endpoints() });
+    storeTokens({ token, expiresAt });
+    return token;
+  }
+
+  if (cached && !force) return cached; // possibly still valid despite clock
+
+  throw new WclError("not connected — click “Connect Warcraft Logs” above (one-time, free WCL account)");
 }
 
 // ---------------------------------------------------------------- zone
@@ -174,10 +284,17 @@ function wireRowToggles() {
 // ---------------------------------------------------------------- setup
 
 function refreshSetupState() {
-  const have = localStorage.getItem(LS.clientId) && localStorage.getItem(LS.clientSecret);
-  $("creds-state").textContent = have ? "credentials saved in this browser ✓" : "no credentials yet";
-  $("setup").open = !have;
-  if (!have && !$("client-id").value) {
+  if (embeddedCredentials()) {
+    $("creds-state").textContent = "ready — no setup needed ✓";
+    $("setup").open = false;
+    $("disconnect").style.display = "none";
+    return;
+  }
+  const connected = isConnected();
+  $("creds-state").textContent = connected ? "connected ✓" : "not connected";
+  $("setup").open = !connected;
+  $("disconnect").style.display = connected ? "" : "none";
+  if (!localStorage.getItem(LS.clientId) && !$("client-id").value) {
     $("client-id").value = DEFAULT_CLIENT_ID;
   }
 }
@@ -186,25 +303,22 @@ function saveCreds() {
   const id = $("client-id").value.trim();
   const secret = $("client-secret").value.trim();
   if (!id || !secret) {
-    setStatus("both client id and client secret are needed", true);
+    setStatus("both client id and client secret are needed for manual mode", true);
     return;
   }
   localStorage.setItem(LS.clientId, id);
   localStorage.setItem(LS.clientSecret, secret);
-  localStorage.removeItem(LS.token);
-  localStorage.removeItem(LS.tokenExpires);
-  $("client-id").value = "";
+  clearTokens();
   $("client-secret").value = "";
   refreshSetupState();
   setStatus("credentials saved (locally in this browser only)");
 }
 
-function forgetCreds() {
-  for (const k of [LS.clientId, LS.clientSecret, LS.token, LS.tokenExpires]) {
-    localStorage.removeItem(k);
-  }
+function disconnect() {
+  clearTokens();
+  for (const k of [LS.clientId, LS.clientSecret]) localStorage.removeItem(k);
   refreshSetupState();
-  setStatus("credentials forgotten");
+  setStatus("disconnected — tokens and credentials removed from this browser");
 }
 
 // ---------------------------------------------------------------- init
@@ -230,20 +344,22 @@ function initFromParams() {
   return false;
 }
 
-export function init() {
+export async function init() {
   $("lookup").addEventListener("click", lookup);
+  $("connect").addEventListener("click", connect);
   $("save-creds").addEventListener("click", saveCreds);
-  $("forget-creds").addEventListener("click", forgetCreds);
+  $("disconnect").addEventListener("click", disconnect);
   $("names").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) lookup();
   });
+
+  await handleOAuthReturn(); // no-op unless arriving from warcraftlogs.com
   refreshSetupState();
   const hasChars = initFromParams();
-  const haveCreds = localStorage.getItem(LS.clientId) && localStorage.getItem(LS.clientSecret);
-  if (hasChars && haveCreds) {
+  if (hasChars && isConnected()) {
     lookup(); // arrived via the addon's Copy URL: run immediately
   } else if (hasChars) {
-    setStatus("names loaded from the link — finish Setup once, then hit Look up");
+    setStatus("names loaded — click “Connect Warcraft Logs” once, then Look up");
   }
 }
 
