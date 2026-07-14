@@ -64,9 +64,9 @@ never appears in the repo source or its history. Repo-owner setup, one time:
    site appears at `https://<user>.github.io/keylevel_addon/`.
 
 Visitors (you and your friends) need **no setup at all** — open the link,
-paste names, done. If the secret is ever missing (e.g. a fork), the site
-falls back to a one-click "Connect Warcraft Logs" sign-in, and an Advanced
-panel accepts manual credentials.
+paste names, done. There is no setup UI on the page; a copy deployed without
+the secret shows a notice telling the owner to add `WCL_CLIENT_SECRET` and
+re-run the deploy workflow.
 
 **Security model, honestly:** GitHub Actions secrets are encrypted and never
 served to visitors, but the *deployed page* must send the secret to
@@ -122,13 +122,11 @@ Everything testable outside the game is tested outside the game:
   evaluation (exact / higher / one-below / only-lower / never), WCL response
   transforms, realm-slug guessing, name parsing, HTML rendering and sorting.
 - **Website end-to-end** (`site-tests/e2e.mjs`): a real Chromium loads the
-  actual site against a fake Warcraft Logs server and verifies all three
-  auth modes — zero-setup with the deploy-injected secret, the PKCE
-  "Connect Warcraft Logs" round-trip (with server-side S256 verification),
-  and manual credentials — plus the whole lookup flow: arriving via an
-  addon-generated URL, auto-lookup, rendered percentiles, "no WCL character"
-  handling, and the detail matrix. (`npm install` once; CI runs it on every
-  push.)
+  actual site against a fake Warcraft Logs server and verifies the whole
+  zero-setup flow — a fresh browser arriving via an addon-generated URL,
+  auto-lookup with the deploy-injected credentials, rendered percentiles,
+  "no WCL character" handling, the detail matrix — plus the unconfigured
+  copy's owner-facing notice. (`npm install` once; CI runs it on every push.)
 
 The only things that can't be verified outside the game are the live Blizzard
 client (one 5-minute in-game pass) and the real WCL API responses for your
