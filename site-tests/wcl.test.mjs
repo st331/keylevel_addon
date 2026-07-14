@@ -51,7 +51,8 @@ test("buildCharacterQuery aliases and escapes", () => {
     [{ id: 12805 }, { id: 361753 }],
   );
   assert.match(q, /c0: character\(name: "O\\"Hara", serverSlug: "area-52", serverRegion: "us"\)/);
-  assert.match(q, /e12805: encounterRankings\(encounterID: 12805, metric: playerscore, byBracket: true\)/);
+  assert.match(q, /e12805: encounterRankings\(encounterID: 12805, metric: dps, byBracket: true\)/,
+    "default metric is dps: byBracket dps percentile = the report's Key %");
   assert.match(q, /e361753:/);
 });
 

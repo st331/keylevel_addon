@@ -17,26 +17,34 @@ function round1(x) {
   return Math.round(x * 10) / 10;
 }
 
-// An encounterRankings blob (byBracket: true):
+// An encounterRankings blob (metric: dps, byBracket: true):
 //   { bestAmount, totalKills, metric,
-//     ranks: [ { rankPercent, bracketData, spec, ... } ] }
-// bracketData is the keystone level of that run. Percentile preference:
-// bracketPercent (if the API provides it) else rankPercent — with
-// byBracket: true, rankPercent is computed within the run's bracket.
+//     ranks: [ { rankPercent, todayPercent, bracketData, amount, spec, ... } ] }
+// bracketData is the keystone level of that run. With byBracket: true the
+// percentiles are computed within that key level — this is the "Key %"
+// column from a report's DPS tab. The report column tracks the up-to-date
+// comparison, so todayPercent is preferred over the locked-in historical
+// rankPercent (verified against live reports).
 export function pickPercent(rank) {
-  const pct = rank?.bracketPercent ?? rank?.rankPercent;
+  const pct = rank?.bracketPercent ?? rank?.todayPercent ?? rank?.rankPercent;
   return typeof pct === "number" ? pct : null;
 }
 
 // Collapse one dungeon's ranks into { [keyLevel]: { pct, spec, pcts } }:
 // pct/spec from the best run at that level, pcts = every run's percentile
-// (so best/average/median can be shown).
+// (so best/average/median can be shown). The API sometimes lists the same
+// run twice (identical amount at the same level) — those are deduped so
+// they don't skew averages.
 export function bestPerLevel(blob) {
   const out = {};
+  const seen = new Set();
   for (const rank of blob?.ranks ?? []) {
     const level = rank?.bracketData;
     const pct = pickPercent(rank);
     if (!Number.isInteger(level) || level < 2 || pct === null) continue;
+    const key = `${level}:${rank.amount ?? pct}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const p = round1(pct);
     if (!out[level]) out[level] = { pct: -1, spec: undefined, pcts: [] };
     const e = out[level];

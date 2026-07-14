@@ -92,7 +92,8 @@ export function guessMythicPlusZone(zones) {
 
 // One aliased query fetching encounterRankings (byBracket: each rank carries
 // bracketData = its keystone level) for several characters x all dungeons.
-export function buildCharacterQuery(chars, encounters, metric = "playerscore") {
+// metric dps + byBracket = the "Key %" column from a report's DPS tab.
+export function buildCharacterQuery(chars, encounters, metric = "dps") {
   const parts = [];
   chars.forEach((c, i) => {
     const rankings = encounters

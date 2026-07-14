@@ -59,15 +59,18 @@ function characterResponse(query) {
   while ((m = charRe.exec(query)) !== null) {
     const [, alias, name, slug] = m;
     if (name === "Foo" && slug === "area52") {
+      // realistic shape: historical rankPercent differs from todayPercent
+      // (the site must show today's Key %), plus an API-duplicated run
       out[alias] = {
         classID: 4,
         [`e${AK}`]: { ranks: [
-          { rankPercent: 91.2, bracketData: 12, spec: "Fire" },
-          { rankPercent: 60.0, bracketData: 12, spec: "Fire" }, // second +12 run: avg/med differ from best
-          { rankPercent: 76.4, bracketData: 11, spec: "Fire" },
-          { rankPercent: 50.0, bracketData: 2, spec: "Fire" }, // outside the ±4 window at +12
+          { rankPercent: 93.5, todayPercent: 91.2, bracketData: 12, amount: 100, spec: "Fire" },
+          { rankPercent: 62.0, todayPercent: 60.0, bracketData: 12, amount: 90, spec: "Fire" }, // second +12 run
+          { rankPercent: 62.0, todayPercent: 60.0, bracketData: 12, amount: 90, spec: "Fire" }, // duplicate: must not skew avg
+          { rankPercent: 78.0, todayPercent: 76.4, bracketData: 11, amount: 80, spec: "Fire" },
+          { rankPercent: 52.0, todayPercent: 50.0, bracketData: 2, amount: 70, spec: "Fire" }, // outside the ±4 window at +12
         ] },
-        [`e${PIT}`]: { ranks: [{ rankPercent: 99.4, bracketData: 14, spec: "Fire" }] },
+        [`e${PIT}`]: { ranks: [{ rankPercent: 99.9, todayPercent: 99.4, bracketData: 14, amount: 120, spec: "Fire" }] },
       };
     } else {
       out[alias] = null;
@@ -98,6 +101,7 @@ function startFakeWcl() {
       }
       state.gqlRequests++;
       const { query } = JSON.parse(body);
+      if (!query.includes("worldData")) state.lastCharQuery = query;
       res.end(JSON.stringify(query.includes("worldData") ? ZONES : characterResponse(query)));
     });
   });
@@ -178,6 +182,11 @@ try {
       assert.match(cells[2], /@\+12/);
       const ghost = await page.locator("tr.row", { hasText: "Ghost-Sargeras" }).innerText();
       assert.match(ghost, /no WCL character/);
+    });
+
+    await check("queries use the dps metric (Key %), not playerscore", async () => {
+      assert.match(wcl.state.lastCharQuery, /metric: dps, byBracket: true/);
+      assert.doesNotMatch(wcl.state.lastCharQuery, /playerscore/);
     });
 
     await check("no separate stats column exists", async () => {
