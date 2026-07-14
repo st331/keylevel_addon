@@ -34,9 +34,11 @@ details#setup {
 }
 details#setup summary { cursor: pointer; color: var(--muted); }
 #creds-state { color: var(--accent); }
-.setup-body ol { margin: 10px 0; padding-left: 22px; color: var(--muted); }
+.setup-body p { color: var(--muted); margin: 10px 0; }
 .cred-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .cred-row input { flex: 1 1 180px; }
+details.advanced { margin-top: 14px; }
+details.advanced summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 
 .controls { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .control { display: flex; flex-direction: column; gap: 4px; }

@@ -2,9 +2,85 @@
 // Endpoints are injectable (tests point them at a fake server).
 
 export const DEFAULT_TOKEN_URL = "https://www.warcraftlogs.com/oauth/token";
+export const DEFAULT_AUTH_URL = "https://www.warcraftlogs.com/oauth/authorize";
 export const DEFAULT_API_URL = "https://www.warcraftlogs.com/api/v2/client";
 
 export class WclError extends Error {}
+
+// --- PKCE ("Public Client") flow: no secret exists anywhere -----------------
+
+const UNRESERVED = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+
+export function makeVerifier(length = 64) {
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += UNRESERVED[b % UNRESERVED.length];
+  return out;
+}
+
+function b64url(bytes) {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// S256 code challenge (base64url of the SHA-256 digest, no padding)
+export async function challengeFromVerifier(verifier) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return b64url(new Uint8Array(digest));
+}
+
+export function buildAuthorizeURL({ authUrl = DEFAULT_AUTH_URL, clientId, redirectUri, state, challenge }) {
+  const p = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    state,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+  });
+  return `${authUrl}?${p}`;
+}
+
+async function tokenPost(tokenUrl, params, fetchImpl) {
+  let res;
+  try {
+    res = await fetchImpl(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(),
+    });
+  } catch (e) {
+    throw new WclError("could not reach the Warcraft Logs token endpoint (network/CORS): " + e.message);
+  }
+  if (!res.ok) throw new WclError(`Warcraft Logs sign-in failed (HTTP ${res.status})`);
+  const json = await res.json();
+  if (!json.access_token) throw new WclError("token response missing access_token");
+  return {
+    token: json.access_token,
+    refreshToken: json.refresh_token,
+    expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000,
+  };
+}
+
+// authorization code -> tokens (code_verifier sent plain, per WCL docs)
+export function exchangeCode({ tokenUrl = DEFAULT_TOKEN_URL, clientId, code, redirectUri, verifier, fetchImpl = fetch }) {
+  return tokenPost(tokenUrl, {
+    grant_type: "authorization_code",
+    client_id: clientId,
+    code,
+    redirect_uri: redirectUri,
+    code_verifier: verifier,
+  }, fetchImpl);
+}
+
+export function refreshTokens({ tokenUrl = DEFAULT_TOKEN_URL, clientId, refreshToken, fetchImpl = fetch }) {
+  return tokenPost(tokenUrl, {
+    grant_type: "refresh_token",
+    client_id: clientId,
+    refresh_token: refreshToken,
+  }, fetchImpl);
+}
 
 // Client-credentials token using the user's own API client (id+secret live
 // only in their browser's localStorage).
