@@ -100,9 +100,31 @@ test("summaryHTML sorts best-first, includes detail rows and profile links", () 
   const ghostIdx = html.indexOf("Ghost-Sargeras");
   assert.ok(aliceIdx >= 0 && ghostIdx >= 0);
   assert.ok(aliceIdx < ghostIdx, "Alice sorts above the missing player");
-  assert.match(html, /Any dungeon @\+12/);
+  assert.match(html, /Best @\+12/);
+  assert.match(html, /Avg · Med @\+12/, "summary stats column present");
   assert.match(html, /want \+12/);
   assert.match(html, /detail-row/);
+  assert.match(html, /colspan="4"/, "detail row spans the stats column too");
   assert.match(html, /no WCL character/);
   assert.match(html, /character\/us\/area-52\/Alice/, "profile link present");
+});
+
+test("statsCellHTML: avg · med at the target level, dashes otherwise", async () => {
+  const { statsCellHTML } = await import("../docs/js/render.js");
+  // alice @12: AK 91.2 + CoT 71.0 -> avg 81.1 -> 81%, median 81.1 -> 81%
+  const cell = statsCellHTML(alice, 12);
+  const pcts = [...cell.matchAll(/>(\d+)%</g)].map((m) => m[1]);
+  assert.deepEqual(pcts, ["81", "81"]);
+  assert.match(statsCellHTML(alice, 13), /—/, "no data at that level");
+  assert.match(statsCellHTML(ghost, 12), /—/, "missing player");
+  assert.match(statsCellHTML(alice, null), /—/, "no level context");
+});
+
+test("summaryHTML without a level omits the stats column", () => {
+  const html = summaryHTML(
+    [{ fullName: "Alice-Area52", player: alice, slug: "area-52", region: "us" }],
+    { level: null, encounter: null, encounters: ENCOUNTERS },
+  );
+  assert.doesNotMatch(html, /Avg · Med/);
+  assert.match(html, /colspan="3"/);
 });

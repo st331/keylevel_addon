@@ -34,6 +34,14 @@ export function anyCellHTML(ev, level) {
   return muted(level ? `no logs +${level - 4}–+${level + 4}` : "no M+ logs");
 }
 
+// Average · median across all dungeons at exactly the target level.
+export function statsCellHTML(player, level) {
+  if (!player || player.missing || !level) return muted("—");
+  const pcts = Object.values(player.levels?.[level]?.dungeons ?? {}).map((d) => d.pct);
+  if (!pcts.length) return muted("—");
+  return `${pctSpan(Math.round(average(pcts)))} ${muted("·")} ${pctSpan(Math.round(median(pcts)))}`;
+}
+
 export function dungeonCellHTML(ev, level, encounterID) {
   if (ev.status !== "OK" || !encounterID) return muted("—");
   const d = ev.dungeon;
@@ -127,20 +135,23 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
     })
     .sort((a, b) => (a.sort !== b.sort ? b.sort - a.sort : a.fullName.localeCompare(b.fullName)));
 
-  const anyHead = level ? `Any dungeon @+${level}` : "Any dungeon";
+  const anyHead = level ? `Best @+${level}` : "Any dungeon";
+  const statsHead = level ? `<th>Avg · Med @+${level}</th>` : "";
   const dgHead = encounter ? `${esc(encounter.name)}${level ? ` (want +${level})` : ""}` : "This dungeon";
+  const colCount = level ? 4 : 3;
 
   let html = `<div class="table-wrap"><table class="summary"><thead><tr>
-    <th>Applicant</th><th>${anyHead}</th><th>${dgHead}</th>
+    <th>Applicant</th><th>${anyHead}</th>${statsHead}<th>${dgHead}</th>
   </tr></thead><tbody>`;
 
   rows.forEach(({ fullName, player, slug, region, ev }, i) => {
+    const statsCell = level ? `<td>${statsCellHTML(player, level)}</td>` : "";
     html += `<tr class="row" data-idx="${i}">
       <td>${nameHTML(fullName, player?.class)}${profileLinkHTML(region, slug, fullName)}</td>
-      <td>${anyCellHTML(ev, level)}</td>
+      <td>${anyCellHTML(ev, level)}</td>${statsCell}
       <td>${dungeonCellHTML(ev, level, encounter?.id)}</td>
     </tr>
-    <tr class="detail-row" data-idx="${i}"><td colspan="3">${detailMatrixHTML(player, encounters, level)}</td></tr>`;
+    <tr class="detail-row" data-idx="${i}"><td colspan="${colCount}">${detailMatrixHTML(player, encounters, level)}</td></tr>`;
   });
 
   html += `</tbody></table></div>`;
