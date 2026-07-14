@@ -3,54 +3,58 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KeyLevelLogs — M+ applicant log lookup</title>
+<meta name="robots" content="noindex">
+<title>KeyLevelLogs — M+ applicant vetting</title>
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔑</text></svg>">
 </head>
 <body>
 <main>
   <header>
-    <h1>🔑 KeyLevelLogs</h1>
-    <p class="tagline">Paste your Mythic+ applicants — see their Warcraft Logs percentiles
-      for <em>your</em> key level: any dungeon at that level, and your dungeon at the same
-      level, a higher one, or one below.</p>
+    <h1 class="hero-title">Key<span class="gold">Level</span>Logs</h1>
+    <p class="hero-sub">WARCRAFT LOGS PERCENTILES FOR YOUR M+ APPLICANTS — AT THE KEY YOU'RE RUNNING</p>
+    <hr class="hero-rule">
   </header>
 
-  <section class="controls">
-    <div class="control">
-      <label for="region">Region</label>
-      <select id="region">
-        <option value="us">US</option>
-        <option value="eu">EU</option>
-        <option value="kr">KR</option>
-        <option value="tw">TW</option>
-      </select>
+  <section class="panel controls-panel">
+    <div class="controls">
+      <div class="control">
+        <label for="region">Region</label>
+        <select id="region">
+          <option value="us">US</option>
+          <option value="eu">EU</option>
+          <option value="kr">KR</option>
+          <option value="tw">TW</option>
+        </select>
+      </div>
+      <div class="control">
+        <label for="level">Key level</label>
+        <input id="level" type="number" min="2" max="40" value="20">
+      </div>
+      <div class="control grow">
+        <label for="dungeon">Dungeon</label>
+        <select id="dungeon"><option value="">(any / not sure)</option></select>
+      </div>
     </div>
-    <div class="control">
-      <label for="level">Key level</label>
-      <input id="level" type="number" min="2" max="40" placeholder="12">
+    <div class="names-box">
+      <label for="names">Applicants — <code>Name-Realm</code>, one per line or comma-separated
+        <span class="label-hint">(the addon’s Copy URL fills all of this in)</span></label>
+      <textarea id="names" rows="4" spellcheck="false" placeholder="Playerone-Area52&#10;Playertwo-TwistingNether"></textarea>
+      <button id="lookup">Look up</button>
     </div>
-    <div class="control grow">
-      <label for="dungeon">Dungeon</label>
-      <select id="dungeon"><option value="">(any / not sure)</option></select>
-    </div>
-  </section>
-
-  <section class="names-box">
-    <label for="names">Characters — one per line or comma-separated, <code>Name-Realm</code>
-      (the addon’s <strong>Copy URL</strong> fills everything in automatically)</label>
-    <textarea id="names" rows="4" placeholder="Playerone-Area52&#10;Playertwo-TwistingNether"></textarea>
-    <button id="lookup">Look up</button>
   </section>
 
   <div id="status" class="status"></div>
   <div id="results"></div>
 
   <footer>
-    <p>Colors follow Warcraft Logs tiers. “(higher)” = they logged the dungeon above your
-      level (counts at least as much); “(one below)” = only one level below.
-      A player with no rows simply doesn’t log — same answer the website would give.</p>
-    <p><a href="https://github.com/st331/keylevel_addon" target="_blank" rel="noopener">Addon &amp; source on GitHub</a></p>
+    <p><b>Reading the table:</b> the middle column is their best percentile at exactly your
+      key level across any dungeon; the right column is <em>your</em> dungeon — at your level,
+      at a higher level <span class="muted">(counts at least as much)</span>, or one below.
+      Click a row for the dungeon × level breakdown with per-level average/median.
+      Only keys within ±4 of yours are considered.</p>
+    <p class="muted">Colors are Warcraft Logs tiers · a player with no rows simply doesn’t log ·
+      <a href="https://github.com/st331/keylevel_addon" target="_blank" rel="noopener">addon &amp; source</a></p>
   </footer>
 </main>
 <script type="module" src="js/app.js"></script>

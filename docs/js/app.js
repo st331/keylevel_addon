@@ -7,9 +7,11 @@
 
 import { parseNamesInput, parseFullName, slugCandidates } from "./slugs.js";
 import { getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
-import { playerFromResult, encounterByName } from "./transform.js";
+import { playerFromResult, encounterByName, windowLevels } from "./transform.js";
 import { summaryHTML } from "./render.js";
 import { embeddedCredentials } from "./config.js";
+
+const LEVEL_WINDOW = 4; // only key levels within ±4 of the target matter
 
 const $ = (id) => document.getElementById(id);
 
@@ -130,10 +132,15 @@ async function lookup() {
       .map((full) => ({ full, parsed: parseFullName(full) }))
       .filter((c) => c.parsed);
     const results = new Map(); // full -> result|null
-    let round = chars.map((c) => ({
-      key: c.full, name: c.parsed.name, realm: c.parsed.realm,
-      candidates: slugCandidates(c.parsed.realm), tried: 0, region,
-    }));
+    const slugs = new Map();   // full -> slug that resolved (or best guess)
+    let round = chars.map((c) => {
+      const candidates = slugCandidates(c.parsed.realm);
+      slugs.set(c.full, candidates[0]);
+      return {
+        key: c.full, name: c.parsed.name, realm: c.parsed.realm,
+        candidates, tried: 0, region,
+      };
+    });
     const perRequest = Math.max(1, Math.floor(16 / Math.max(1, zone.encounters.length)));
     while (round.length > 0) {
       const batch = round.map((c) => ({ ...c, serverSlug: c.candidates[c.tried] }));
@@ -144,17 +151,36 @@ async function lookup() {
       }
       const next = [];
       for (const r of fetched) {
-        if (r.result) results.set(r.key, r.result);
-        else if (r.tried + 1 < r.candidates.length) next.push({ ...r, tried: r.tried + 1 });
-        else results.set(r.key, null);
+        if (r.result) {
+          results.set(r.key, r.result);
+          slugs.set(r.key, r.serverSlug);
+        } else if (r.tried + 1 < r.candidates.length) {
+          next.push({ ...r, tried: r.tried + 1 });
+        } else {
+          results.set(r.key, null);
+        }
       }
       round = next;
     }
 
-    const entries = names.map((full) => ({ fullName: full, player: playerFromResult(results.get(full) ?? null) }));
+    const entries = names.map((full) => ({
+      fullName: full,
+      player: windowLevels(playerFromResult(results.get(full) ?? null), level, LEVEL_WINDOW),
+      slug: slugs.get(full),
+      region,
+    }));
     $("results").innerHTML = summaryHTML(entries, { level, encounter, encounters: zone.encounters });
     wireRowToggles();
-    setStatus(`done — ${entries.length} character(s), season: ${zone.name}. Click a row for the full dungeon × level matrix.`);
+
+    // make the current lookup shareable (same format the addon generates)
+    const share = new URLSearchParams({ region });
+    if (level) share.set("level", String(level));
+    if ($("dungeon").value) share.set("dungeon", $("dungeon").value);
+    share.set("chars", names.join(","));
+    history.replaceState(null, "", location.pathname + "?" + share.toString());
+
+    const windowNote = level ? ` · showing keys +${Math.max(2, level - LEVEL_WINDOW)}–+${level + LEVEL_WINDOW}` : "";
+    setStatus(`done — ${entries.length} character(s) · ${zone.name}${windowNote} · click a row for details`);
   } catch (e) {
     if (e instanceof WclError) setStatus(e.message, true);
     else { setStatus("unexpected error: " + e.message, true); throw e; }
@@ -165,7 +191,8 @@ async function lookup() {
 
 function wireRowToggles() {
   for (const row of document.querySelectorAll("tr.row")) {
-    row.addEventListener("click", () => {
+    row.addEventListener("click", (ev) => {
+      if (ev.target.closest("a")) return; // profile link, not a toggle
       const detail = document.querySelector(`tr.detail-row[data-idx="${row.dataset.idx}"]`);
       if (detail) detail.classList.toggle("open");
     });
@@ -195,6 +222,16 @@ function initFromParams() {
   return false;
 }
 
+// Fill the dungeon dropdown as soon as the page loads (uses the 24h zone
+// cache after the first visit), so it never sits empty.
+async function prefetchDungeons() {
+  try {
+    const token = await ensureToken();
+    const zone = await ensureZone(token);
+    populateDungeonSelect(zone.encounters, $("dungeon").value);
+  } catch { /* the first Look up will surface any real problem */ }
+}
+
 export function init() {
   $("lookup").addEventListener("click", lookup);
   $("names").addEventListener("keydown", (e) => {
@@ -208,6 +245,8 @@ export function init() {
   }
   if (hasChars) {
     lookup(); // arrived via the addon's Copy URL: run immediately
+  } else {
+    prefetchDungeons();
   }
 }
 
