@@ -13,6 +13,41 @@ export function classToken(classID) {
   return WCL_CLASS_TOKENS[classID];
 }
 
+// Spec name -> role. Ambiguous names (Protection, Holy, Restoration) are
+// unambiguous at the role level: every spec sharing a name shares a role.
+const HEALER_SPECS = new Set(["Restoration", "Preservation", "Mistweaver", "Holy", "Discipline"]);
+const TANK_SPECS = new Set(["Blood", "Vengeance", "Guardian", "Brewmaster", "Protection"]);
+
+export function roleOfSpec(spec) {
+  if (!spec) return "dps";
+  if (HEALER_SPECS.has(spec)) return "healer";
+  if (TANK_SPECS.has(spec)) return "tank";
+  return "dps";
+}
+
+// Which role does this character mainly play? Sum the M+ score of their
+// runs per role (runs as tiebreaker); dps wins remaining ties. null when
+// there are no runs to judge by.
+export function detectRole(result) {
+  if (!result) return null;
+  const score = { tank: 0, healer: 0, dps: 0 };
+  const runs = { tank: 0, healer: 0, dps: 0 };
+  for (const [alias, blob] of Object.entries(result)) {
+    if (!/^e\d+$/.test(alias)) continue;
+    for (const rank of blob?.ranks ?? []) {
+      const role = roleOfSpec(rank?.spec);
+      score[role] += rank?.score ?? 0;
+      runs[role] += 1;
+    }
+  }
+  if (runs.tank + runs.healer + runs.dps === 0) return null;
+  let best = "dps";
+  for (const r of ["healer", "tank"]) {
+    if (score[r] > score[best] || (score[r] === score[best] && runs[r] > runs[best])) best = r;
+  }
+  return best;
+}
+
 function round1(x) {
   return Math.round(x * 10) / 10;
 }
@@ -55,6 +90,7 @@ export function bestPerLevel(blob) {
     if (p > e.pct) {
       e.pct = p;
       e.spec = rank.spec || rank.bestSpec || undefined;
+      if (typeof rank.startTime === "number") e.when = rank.startTime; // ms
       // provenance: link the best run to its exact report fight
       if (rank.report?.code) {
         e.report = { code: rank.report.code, fightID: rank.report.fightID };
@@ -65,9 +101,11 @@ export function bestPerLevel(blob) {
 }
 
 // One character's aliased result ({ classID, e<encID>: blob, ... }) ->
-//   { class, levels: { [level]: { best, runs, dungeons: { [encID]: {pct,spec} } } } }
+//   { class, role, levels: { [level]: { best, runs, dungeons: { [encID]: {pct,spec} } } } }
 // A null result (character not on WCL) -> { missing: true }.
-export function playerFromResult(result) {
+// role can be passed in (e.g. detected from the dps pass while building
+// from the hps pass); otherwise it's detected from this result.
+export function playerFromResult(result, role) {
   if (!result) return { missing: true };
   const levels = {};
   for (const [alias, blob] of Object.entries(result)) {
@@ -82,7 +120,14 @@ export function playerFromResult(result) {
       if (entry.pct > levels[level].best) levels[level].best = entry.pct;
     }
   }
-  return { class: classToken(result.classID), levels };
+  return { class: classToken(result.classID), role: role ?? detectRole(result), levels };
+}
+
+// Does a result contain any usable ranked runs at all?
+export function hasRanks(result) {
+  if (!result) return false;
+  return Object.entries(result).some(([alias, blob]) =>
+    /^e\d+$/.test(alias) && (blob?.ranks?.length ?? 0) > 0);
 }
 
 // The core verdict, mirroring how you'd vet a player manually:
@@ -109,18 +154,18 @@ export function evaluate(player, encounterID, keyLevel) {
     if (encounterID) {
       const exact = atLevel?.dungeons?.[encounterID];
       if (exact) {
-        result.dungeon = { pct: exact.pct, level: keyLevel, spec: exact.spec, kind: "exact", pcts: exact.pcts };
+        result.dungeon = { pct: exact.pct, level: keyLevel, spec: exact.spec, kind: "exact", pcts: exact.pcts, ...(exact.when !== undefined && { when: exact.when }) };
       } else {
         const above = levelNums
           .filter((l) => l > keyLevel && levels[l].dungeons?.[encounterID])
           .sort((a, b) => a - b)[0];
         if (above !== undefined) {
           const d = levels[above].dungeons[encounterID];
-          result.dungeon = { pct: d.pct, level: above, spec: d.spec, kind: "above", pcts: d.pcts };
+          result.dungeon = { pct: d.pct, level: above, spec: d.spec, kind: "above", pcts: d.pcts, ...(d.when !== undefined && { when: d.when }) };
         } else {
           const fb = levels[keyLevel - 1]?.dungeons?.[encounterID];
           if (fb) {
-            result.dungeon = { pct: fb.pct, level: keyLevel - 1, spec: fb.spec, kind: "below", pcts: fb.pcts };
+            result.dungeon = { pct: fb.pct, level: keyLevel - 1, spec: fb.spec, kind: "below", pcts: fb.pcts, ...(fb.when !== undefined && { when: fb.when }) };
           }
         }
       }

@@ -29,6 +29,15 @@ function muted(text) {
   return `<span class="muted">${esc(text)}</span>`;
 }
 
+// "today" / "6d" / "3mo" — how long ago a run happened (whenMs from the API).
+export function ageText(whenMs, nowMs = Date.now()) {
+  if (typeof whenMs !== "number" || whenMs <= 0) return null;
+  const days = Math.floor((nowMs - whenMs) / 86_400_000);
+  if (days < 1) return "today";
+  if (days < 45) return `${days}d`;
+  return `${Math.round(days / 30)}mo`;
+}
+
 export function anyCellHTML(ev, level) {
   if (ev.status === "NO_WCL") return muted("no WCL character");
   if (!level) {
@@ -51,7 +60,8 @@ export function dungeonCellHTML(ev, level, encounterID) {
   const d = ev.dungeon;
   if (d) {
     const marker = d.kind === "below" ? ` (one below)` : d.kind === "above" ? ` (higher)` : "";
-    return `${bamHTML(d.pct, d.pcts)} ${muted(`@+${d.level}${marker}${d.spec ? " · " + d.spec : ""}`)}`;
+    const age = ageText(d.when);
+    return `${bamHTML(d.pct, d.pcts)} ${muted(`@+${d.level}${marker}${d.spec ? " · " + d.spec : ""}${age ? " · " + age : ""}`)}`;
   }
   if (ev.dungeonBest) {
     return `${muted("only lower · best")} +${ev.dungeonBest.level} ${pctSpan(ev.dungeonBest.pct)}`;
@@ -69,6 +79,18 @@ const CLASS_COLORS = {
 export function nameHTML(name, cls) {
   const color = CLASS_COLORS[cls] ?? "#e8e6e3";
   return `<span class="charname" style="color:${color}">${esc(name)}</span>`;
+}
+
+// Small role chip: T / H / D. Healers get a hint that their numbers are HPS.
+export function roleChipHTML(role) {
+  if (!role) return "";
+  const map = {
+    tank: ["T", "role-tank", "Tank"],
+    healer: ["H", "role-healer", "Healer — ranked on healing (HPS Key %)"],
+    dps: ["D", "role-dps", "DPS"],
+  };
+  const [letter, cls, title] = map[role] ?? map.dps;
+  return ` <span class="role ${cls}" title="${title}">${letter}</span>`;
 }
 
 // Small ↗ link to the character's full Warcraft Logs page.
@@ -103,11 +125,14 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
       const d = levels[l]?.dungeons?.[e.id];
       if (d) {
         any = true;
-        // each percentile links to the exact report fight it came from
+        // each percentile links to the exact report fight it came from;
+        // hover shows when the run happened (percentile is frozen to that day)
+        const when = d.when ? new Date(d.when).toISOString().slice(0, 10) : null;
+        const title = when ? `run on ${when} — open its report` : "open this run's report";
         const cell = d.report?.code
-          ? `<a class="runlink" target="_blank" rel="noopener" title="open this run's report"
+          ? `<a class="runlink" target="_blank" rel="noopener" title="${title}"
                href="https://www.warcraftlogs.com/reports/${encodeURIComponent(d.report.code)}?fight=${Number(d.report.fightID) || 1}&type=damage-done">${pctSpan(d.pct)}</a>`
-          : pctSpan(d.pct);
+          : `<span${when ? ` title="run on ${when}"` : ""}>${pctSpan(d.pct)}</span>`;
         row += `<td class="${l === targetLevel ? "target-level" : ""}">${cell}</td>`;
       } else {
         row += `<td class="${l === targetLevel ? "target-level" : ""}"><span class="muted">·</span></td>`;
@@ -153,7 +178,7 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
 
   rows.forEach(({ fullName, player, slug, region, ev }, i) => {
     html += `<tr class="row" data-idx="${i}">
-      <td>${nameHTML(fullName, player?.class)}${profileLinkHTML(region, slug, fullName)}</td>
+      <td>${nameHTML(fullName, player?.class)}${roleChipHTML(player?.role)}${profileLinkHTML(region, slug, fullName)}</td>
       <td>${anyCellHTML(ev, level)}</td>
       <td>${dungeonCellHTML(ev, level, encounter?.id)}</td>
     </tr>

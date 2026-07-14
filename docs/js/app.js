@@ -7,7 +7,7 @@
 
 import { parseNamesInput, parseFullName, slugCandidates } from "./slugs.js";
 import { getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
-import { playerFromResult, encounterByName, windowLevels } from "./transform.js";
+import { playerFromResult, encounterByName, windowLevels, detectRole, hasRanks } from "./transform.js";
 import { summaryHTML } from "./render.js";
 import { embeddedCredentials } from "./config.js";
 
@@ -163,9 +163,32 @@ async function lookup() {
       round = next;
     }
 
+    // second pass: healers are judged on healing — refetch theirs with hps
+    const roles = new Map(); // full -> detected role (from the dps pass)
+    const healers = [];
+    for (const full of names) {
+      const role = detectRole(results.get(full) ?? null);
+      if (role) roles.set(full, role);
+      if (role === "healer") healers.push(full);
+    }
+    if (healers.length > 0) {
+      setStatus(`fetching healing rankings for ${healers.length} healer(s)…`);
+      const batch = healers.map((full) => {
+        const parsed = parseFullName(full);
+        return { key: full, name: parsed.name, serverSlug: slugs.get(full), region };
+      });
+      for (let i = 0; i < batch.length; i += perRequest) {
+        const fetched = await fetchCharacters(ctx, batch.slice(i, i + perRequest), zone.encounters, "hps");
+        for (const r of fetched) {
+          // keep dps numbers if the hps result is unexpectedly empty
+          if (hasRanks(r.result)) results.set(r.key, r.result);
+        }
+      }
+    }
+
     const entries = names.map((full) => ({
       fullName: full,
-      player: windowLevels(playerFromResult(results.get(full) ?? null), level, LEVEL_WINDOW),
+      player: windowLevels(playerFromResult(results.get(full) ?? null, roles.get(full)), level, LEVEL_WINDOW),
       slug: slugs.get(full),
       region,
     }));
