@@ -5,9 +5,9 @@
 // visitors just paste names. An undeployed/unconfigured copy shows a clear
 // notice instead of a setup flow.
 
-import { parseEntriesInput, slugCandidates } from "./slugs.js";
+import { parseEntriesInput, dedupeEntries, slugCandidates } from "./slugs.js";
 import { getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
-import { playerFromResult, encounterByName, windowLevels, rolesWithRuns, buildRolePlayers } from "./transform.js";
+import { playerFromResult, encounterByName, windowLevels, rolesWithRuns, buildRolePlayers, pickSelectedRole } from "./transform.js";
 import { summaryHTML } from "./render.js";
 import { embeddedCredentials } from "./config.js";
 
@@ -97,12 +97,14 @@ function populateDungeonSelect(encounters, selected) {
 // ---------------------------------------------------------------- lookup
 
 async function lookup() {
-  const parsed = parseEntriesInput($("names").value);
+  const dropdownRegion = $("region").value;
+  // a typed name and a pasted URL can be the same character — collapse them
+  // now that the default region is known
+  const parsed = dedupeEntries(parseEntriesInput($("names").value), dropdownRegion);
   if (parsed.length === 0) {
     setStatus("paste at least one Name-Realm or a Raider.IO / Armory / Warcraft Logs character link", true);
     return;
   }
-  const dropdownRegion = $("region").value;
   localStorage.setItem(LS.region, dropdownRegion);
   const level = Number($("level").value) || null;
   const names = parsed.map((e) => e.full);
@@ -188,13 +190,12 @@ async function lookup() {
       for (const [role, p] of Object.entries(byRole)) {
         windowed[role] = windowLevels(p, level, LEVEL_WINDOW);
       }
-      // default view: the role holding the most top keys (order's head)
-      const selected = windowed[detected]
-        ? detected
-        : order.find((r) => windowed[r]) ?? null;
+      // default view: the lead role — unless the key-level window emptied
+      // its table while another role still has visible runs
+      const selected = pickSelectedRole(order, windowed);
       return {
         fullName: full,
-        detected, selected, order, topKeys, byRole: windowed,
+        detected, selected, sortRole: selected, order, topKeys, byRole: windowed,
         // no per-role runs at all: unfiltered fallback keeps the old
         // "no M+ logs" / "no WCL character" rows working
         player: selected
@@ -234,12 +235,24 @@ function renderResults() {
   const open = new Set(
     [...document.querySelectorAll("tr.detail-row.open")].map((r) => r.dataset.full),
   );
+  // the rebuild destroys the clicked chip: remember it to restore focus,
+  // so keyboard users don't get dumped back to the top of the page
+  const focused = document.activeElement?.closest?.("button.role[data-role]");
+  const focusKey = focused ? `${focused.dataset.full} ${focused.dataset.role}` : null;
   $("results").innerHTML = summaryHTML(lastRender.entries, lastRender);
   for (const row of document.querySelectorAll("tr.detail-row")) {
     if (open.has(row.dataset.full)) row.classList.add("open");
   }
   wireRowToggles();
   wireRoleChips();
+  if (focusKey) {
+    for (const btn of document.querySelectorAll("button.role[data-role]")) {
+      if (`${btn.dataset.full} ${btn.dataset.role}` === focusKey) {
+        btn.focus();
+        break;
+      }
+    }
+  }
 }
 
 function wireRowToggles() {

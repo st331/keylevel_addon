@@ -5,7 +5,7 @@ import {
   tierClass, sortValue, encounterByName, classToken,
   windowLevels, average, median,
   roleOfSpec, detectRole, hasRanks, rolesWithRuns, buildRolePlayers,
-  topKeyRoles, roleOrder,
+  topKeyRoles, roleOrder, pickSelectedRole,
 } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669, MISTS = 62290;
@@ -359,6 +359,31 @@ test("roleOrder: most top keys first; recency breaks ties; topless roles trail",
   };
   assert.deepEqual(roleOrder(offRole), ["healer", "dps"]);
   assert.deepEqual(roleOrder(null), []);
+
+  // top keys are the PRIMARY rule: 2 tank tops beat a healer whose recent
+  // grind dominates the recency-weighted score (this pins the rule — with
+  // recency-only ordering, healer would come first)
+  const grinder = {
+    classID: 5,
+    e1: { ranks: [{ spec: "Brewmaster", score: 470, bracketData: 14, historicalPercent: 1, amount: 1, startTime: now - 200 * day }] },
+    e2: { ranks: [{ spec: "Brewmaster", score: 460, bracketData: 14, historicalPercent: 1, amount: 2, startTime: now - 201 * day }] },
+    e3: { ranks: Array.from({ length: 10 }, (_, i) => (
+      { spec: "Mistweaver", score: 300, bracketData: 10, historicalPercent: 1, amount: 10 + i, startTime: now - i * day }
+    )) },
+  };
+  assert.deepEqual(roleOrder(grinder), ["tank", "healer"], "2 top keys beat recency score");
+});
+
+test("pickSelectedRole skips roles the key-level window emptied", () => {
+  const byRole = {
+    tank: { role: "tank", levels: {} },              // emptied by windowing
+    healer: { role: "healer", levels: { 12: { best: 80, runs: 1, dungeons: {} } } },
+  };
+  assert.equal(pickSelectedRole(["tank", "healer"], byRole), "healer",
+    "lead role has nothing visible -> fall through to one that does");
+  assert.equal(pickSelectedRole(["tank"], { tank: { levels: {} } }), "tank",
+    "nothing visible anywhere -> keep the lead role");
+  assert.equal(pickSelectedRole([], {}), null);
 });
 
 test("rolesWithRuns lists every role the character has played", () => {
@@ -401,6 +426,8 @@ test("buildRolePlayers: healer table from hps, tank/dps from dps, per-run split"
   assert.equal(byRole.dps, undefined, "no dps-spec runs -> no dps table");
   assert.equal(byRole.tank.role, "tank");
   assert.equal(byRole.healer.role, "healer");
+  assert.equal(byRole.tank.metric, "dps", "metric tag drives report-tab links");
+  assert.equal(byRole.healer.metric, "hps");
 
   // no hps result (fetch skipped/failed): mislabeled numbers are worse than
   // an absent table — healer view must be omitted, not built from dps

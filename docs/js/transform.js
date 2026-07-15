@@ -214,10 +214,21 @@ export function buildRolePlayers(dpsResult, hpsResult) {
     const src = role === "healer" ? hpsResult : dpsResult;
     if (!src) continue;
     const p = playerFromResult(src, role, role);
+    // which metric produced these percentiles — drives report-tab links
+    p.metric = role === "healer" ? "hps" : "dps";
     if (Object.keys(p.levels).length > 0) byRole[role] = p;
   }
   const order = roleOrder(dpsResult).filter((r) => byRole[r]);
   return { detected: order[0] ?? null, order, topKeys: topKeyRoles(dpsResult), byRole };
+}
+
+// Which role should a row open on? The first (by order) whose table still
+// has levels — windowing to ±4 of the target key can empty the lead role's
+// table while another role has runs the user can actually see.
+export function pickSelectedRole(order, byRole) {
+  return order.find((r) => Object.keys(byRole[r]?.levels ?? {}).length > 0)
+    ?? order[0]
+    ?? null;
 }
 
 // Does a result contain any usable ranked runs at all?

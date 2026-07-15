@@ -198,7 +198,9 @@ async function newPage() {
 }
 
 const RIO_URL = "https://raider.io/characters/eu/twisting-nether/Eurodude";
-const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Switcher-Area52,Ghost-Sargeras,https%3A%2F%2Fraider.io%2Fcharacters%2Feu%2Ftwisting-nether%2FEurodude`;
+// the last token is an armory URL for Foo — the SAME character as the typed
+// "Foo-Area52" once the us dropdown region applies; it must collapse to one row
+const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Switcher-Area52,Ghost-Sargeras,https%3A%2F%2Fraider.io%2Fcharacters%2Feu%2Ftwisting-nether%2FEurodude,https%3A%2F%2Fworldofwarcraft.blizzard.com%2Fen-us%2Fcharacter%2Fus%2Farea-52%2Ffoo`;
 
 // ================= scenario 1: deployed site, zero setup ====================
 try {
@@ -219,7 +221,8 @@ try {
     await check("controls prefilled from the addon URL", async () => {
       assert.equal(await page.inputValue("#level"), "12");
       assert.equal(await page.inputValue("#region"), "us");
-      assert.match(await page.inputValue("#names"), /Foo-Area52\nPriestess-Area52\nSwitcher-Area52\nGhost-Sargeras\nhttps:\/\/raider\.io/);
+      assert.match(await page.inputValue("#names"),
+        /Foo-Area52\nPriestess-Area52\nSwitcher-Area52\nGhost-Sargeras\nhttps:\/\/raider\.io.*\nhttps:\/\/worldofwarcraft/);
       assert.equal(await page.inputValue("#dungeon"), "Windrunner Spire");
     });
 
@@ -292,6 +295,10 @@ try {
       assert.deepEqual(names, ["Eurodude-TwistingNether", "Switcher-Area52", "Foo-Area52", "Priestess-Area52", "Ghost-Sargeras"]);
     });
 
+    await check("typed name + armory URL of the same character = one row", async () => {
+      assert.equal(await page.locator("tr.row", { hasText: "Foo-Area52" }).count(), 1);
+    });
+
     await check("clicking a row opens the dungeon × level matrix", async () => {
       await page.locator("tr.row", { hasText: "Foo-Area52" }).click();
       const text = await page.locator("tr.detail-row.open").innerText();
@@ -355,6 +362,15 @@ try {
       assert.doesNotMatch(text, /7b/, "tank runs' hps percentiles never shown");
       const namesAfter = await page.locator("tr.row .charname").allInnerTexts();
       assert.deepEqual(namesAfter, namesBefore, "sort stays pinned to the detected role");
+    });
+
+    await check("chip click keeps keyboard focus on the chip", async () => {
+      // the click re-render destroys and recreates the button; focus must follow
+      const focus = await page.evaluate(() => {
+        const el = document.activeElement;
+        return el?.matches?.("button.role") ? `${el.dataset.full} ${el.dataset.role}` : null;
+      });
+      assert.equal(focus, "Switcher-Area52 tank", "recreated chip regains focus");
     });
 
     await check("healer detail matrix links to the healing tab", async () => {

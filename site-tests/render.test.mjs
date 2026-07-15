@@ -147,11 +147,17 @@ test("roleChipsHTML follows entry.order and shows top-key counts", () => {
   assert.doesNotMatch(html, /holds 0/, "topless dps chip gets no count");
 });
 
-test("detailMatrixHTML: healer tables link to the healing tab", () => {
+test("detailMatrixHTML: hps-metric tables link to the healing tab", () => {
   const hpsRanks = { ranks: [{ historicalPercent: 88.0, bracketData: 12, amount: 900, spec: "Mistweaver", report: { code: "HEALC0DE", fightID: 5 } }] };
   const healer = playerFromResult({ classID: 5, [`e${AK}`]: hpsRanks }, "healer", "healer");
+  healer.metric = "hps"; // as buildRolePlayers tags it
   const html = detailMatrixHTML(healer, ENCOUNTERS, 12);
   assert.match(html, /\?fight=5&type=healing"/, "healing tab, not damage-done");
+
+  // the metric decides, not the role: a healer-role table built from dps
+  // percentiles (fallback path) must keep damage-done links
+  const fallback = playerFromResult({ classID: 5, [`e${AK}`]: hpsRanks }, "healer", "healer");
+  assert.match(detailMatrixHTML(fallback, ENCOUNTERS, 12), /type=damage-done"/);
 });
 
 test("summaryHTML with byRole entries: active view renders, sort follows detected", () => {

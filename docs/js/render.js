@@ -140,8 +140,10 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
   }
   head += `</tr>`;
 
-  // healer tables came from healing rankings: link to the report's healing tab
-  const reportTab = player.role === "healer" ? "healing" : "damage-done";
+  // tables built from healing rankings link to the report's healing tab;
+  // keyed off the metric, not the role, so a fallback table of dps-metric
+  // numbers never mislabels its links
+  const reportTab = player.metric === "hps" ? "healing" : "damage-done";
 
   let body = "";
   for (const e of encounters) {
@@ -187,15 +189,16 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
 
 // The main summary table.
 // entries: [{ fullName, player (windowed), slug, region,
-//             detected?, selected?, byRole? (per-role windowed players) }]
-// player is the active view; sorting always follows the DETECTED role's
-// table so toggling one row's chips never reshuffles the list.
+//             detected?, selected?, sortRole?, order?, topKeys?, byRole? }]
+// player is the active view; sorting always follows the sortRole (the
+// initially shown role) so toggling one row's chips never reshuffles
+// the list.
 export function summaryHTML(entries, { level, encounter, encounters }) {
   const rows = entries
     .map((entry) => {
-      const { fullName, player, byRole, detected } = entry;
+      const { player, byRole, sortRole, detected } = entry;
       const ev = evaluate(player, encounter?.id, level);
-      const sortPlayer = byRole?.[detected] ?? player;
+      const sortPlayer = byRole?.[sortRole ?? detected] ?? player;
       const sortEv = sortPlayer === player ? ev : evaluate(sortPlayer, encounter?.id, level);
       return { ...entry, ev, sort: sortValue(sortEv) };
     })
