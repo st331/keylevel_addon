@@ -183,19 +183,18 @@ async function lookup() {
 
     const entries = names.map((full) => {
       const dpsResult = results.get(full) ?? null;
-      const { detected, byRole } = buildRolePlayers(dpsResult, hpsResults.get(full) ?? null);
+      const { detected, order, topKeys, byRole } = buildRolePlayers(dpsResult, hpsResults.get(full) ?? null);
       const windowed = {};
       for (const [role, p] of Object.entries(byRole)) {
         windowed[role] = windowLevels(p, level, LEVEL_WINDOW);
       }
-      // default view: the detected (current-main) role; if somehow absent,
-      // any role they do have runs in
+      // default view: the role holding the most top keys (order's head)
       const selected = windowed[detected]
         ? detected
-        : ["healer", "tank", "dps"].find((r) => windowed[r]) ?? null;
+        : order.find((r) => windowed[r]) ?? null;
       return {
         fullName: full,
-        detected, selected, byRole: windowed,
+        detected, selected, order, topKeys, byRole: windowed,
         // no per-role runs at all: unfiltered fallback keeps the old
         // "no M+ logs" / "no WCL character" rows working
         player: selected

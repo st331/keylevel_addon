@@ -25,17 +25,16 @@ export function roleOfSpec(spec) {
   return "dps";
 }
 
-// Which role does this character mainly play *now*? Their runs (newest
-// first) are score-summed per role with an exponential decay per run, so
-// the last ~10-15 runs dominate: a tank who switched to healing mid-season
-// reads as a healer, but one novelty off-role run can't flip a long main.
-// Plain all-time score sums fail exactly that case — months of old
-// tank runs outweighing a current healer main. Runs break score ties;
-// dps wins remaining ties. null when there are no runs to judge by.
+// Recency-weighted score per role: runs (newest first) are score-summed
+// with an exponential decay per run, so the last ~10-15 runs dominate.
+// Used to break ties between roles that hold equally many top keys — a
+// 4/4 tank-healer split resolves to whichever role they play *now*.
 export const ROLE_RECENCY_DECAY = 0.9;
 
-export function detectRole(result) {
-  if (!result) return null;
+export function recencyScores(result) {
+  const score = { tank: 0, healer: 0, dps: 0 };
+  const runs = { tank: 0, healer: 0, dps: 0 };
+  if (!result) return { score, runs };
   const all = [];
   for (const [alias, blob] of Object.entries(result)) {
     if (!/^e\d+$/.test(alias)) continue;
@@ -52,19 +51,63 @@ export function detectRole(result) {
       });
     }
   }
-  if (all.length === 0) return null;
   all.sort((a, b) => b.when - a.when);
-  const score = { tank: 0, healer: 0, dps: 0 };
-  const runs = { tank: 0, healer: 0, dps: 0 };
   all.forEach((r, i) => {
     score[r.role] += r.score * Math.pow(ROLE_RECENCY_DECAY, i);
     runs[r.role] += 1;
   });
+  return { score, runs };
+}
+
+export function detectRole(result) {
+  if (!result) return null;
+  const { score, runs } = recencyScores(result);
+  if (runs.tank + runs.healer + runs.dps === 0) return null;
   let best = "dps";
   for (const r of ["healer", "tank"]) {
     if (score[r] > score[best] || (score[r] === score[best] && runs[r] > runs[best])) best = r;
   }
   return best;
+}
+
+// A character's "top key" for a dungeon is their highest-scored run of it;
+// with 8 dungeons a season, everyone has up to 8. topKeyRoles counts how
+// many top keys each role holds: { [role]: { keys, score } }.
+export function topKeyRoles(result) {
+  const out = {};
+  if (!result) return out;
+  for (const [alias, blob] of Object.entries(result)) {
+    if (!/^e\d+$/.test(alias)) continue;
+    let top = null;
+    for (const rank of blob?.ranks ?? []) {
+      const s = rank?.score ?? 0;
+      if (!top || s > top.score) top = { score: s, role: roleOfSpec(rank?.spec) };
+    }
+    if (top) {
+      out[top.role] ??= { keys: 0, score: 0 };
+      out[top.role].keys += 1;
+      out[top.role].score += top.score;
+    }
+  }
+  return out;
+}
+
+// Which roles does this character play, in display order? Roles holding
+// the most top keys come first (that's their effective main); ties fall
+// to recency-weighted score (who they are *now*); roles with runs but no
+// top keys trail at the end.
+export function roleOrder(result) {
+  if (!result) return [];
+  const tops = topKeyRoles(result);
+  const { score } = recencyScores(result);
+  const played = rolesWithRuns(result);
+  const base = ["tank", "healer", "dps"];
+  return base
+    .filter((r) => played.has(r))
+    .sort((a, b) =>
+      (tops[b]?.keys ?? 0) - (tops[a]?.keys ?? 0)
+      || (score[b] ?? 0) - (score[a] ?? 0)
+      || base.indexOf(a) - base.indexOf(b));
 }
 
 function round1(x) {
@@ -159,10 +202,11 @@ export function rolesWithRuns(result) {
 // Per-role tables for one character, each run judged by the role it was
 // played in: healer-spec runs take their percentiles from the hps result
 // (healers are ranked on healing), tank/dps-spec runs from the dps result.
-// Roles with no runs are absent. `detected` is the recency-weighted main.
+// Roles with no runs are absent. `order` is the display order (most top
+// keys first — see roleOrder); `detected` is its head: the effective main.
+// `topKeys` carries the per-role top-key counts for chip tooltips.
 export function buildRolePlayers(dpsResult, hpsResult) {
-  if (!dpsResult) return { detected: null, byRole: {} };
-  const detected = detectRole(dpsResult);
+  if (!dpsResult) return { detected: null, order: [], topKeys: {}, byRole: {} };
   const byRole = {};
   for (const role of ["tank", "healer", "dps"]) {
     // never fall back to dps percentiles for healer runs: mislabeled
@@ -172,7 +216,8 @@ export function buildRolePlayers(dpsResult, hpsResult) {
     const p = playerFromResult(src, role, role);
     if (Object.keys(p.levels).length > 0) byRole[role] = p;
   }
-  return { detected, byRole };
+  const order = roleOrder(dpsResult).filter((r) => byRole[r]);
+  return { detected: order[0] ?? null, order, topKeys: topKeyRoles(dpsResult), byRole };
 }
 
 // Does a result contain any usable ranked runs at all?

@@ -5,6 +5,7 @@ import {
   tierClass, sortValue, encounterByName, classToken,
   windowLevels, average, median,
   roleOfSpec, detectRole, hasRanks, rolesWithRuns, buildRolePlayers,
+  topKeyRoles, roleOrder,
 } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669, MISTS = 62290;
@@ -306,6 +307,60 @@ test("playerFromResult carries the role; override wins; filterRole filters", () 
   assert.deepEqual(Object.keys(healOnly.levels), ["13"], "tank run filtered out");
 });
 
+test("topKeyRoles: the highest-scored run of each dungeon is its top key", () => {
+  const result = {
+    classID: 5,
+    e1: { ranks: [
+      { spec: "Brewmaster", score: 400, bracketData: 12, historicalPercent: 10, amount: 1 },
+      { spec: "Mistweaver", score: 450, bracketData: 13, historicalPercent: 20, amount: 2 }, // top
+    ] },
+    e2: { ranks: [
+      { spec: "Brewmaster", score: 470, bracketData: 14, historicalPercent: 30, amount: 3 }, // top
+      { spec: "Mistweaver", score: 460, bracketData: 13, historicalPercent: 40, amount: 4 },
+    ] },
+    e3: { ranks: [{ spec: "Windwalker", score: 300, bracketData: 10, historicalPercent: 50, amount: 5 }] }, // top
+    e4: { ranks: [] }, // dungeon never done: no top key
+  };
+  assert.deepEqual(topKeyRoles(result), {
+    healer: { keys: 1, score: 450 },
+    tank: { keys: 1, score: 470 },
+    dps: { keys: 1, score: 300 },
+  });
+  assert.deepEqual(topKeyRoles(null), {});
+});
+
+test("roleOrder: most top keys first; recency breaks ties; topless roles trail", () => {
+  const now = 1_780_000_000_000, day = 86_400_000;
+  // 2 tank tops vs 1 healer top -> tank leads even though healing is recent
+  const tankLead = {
+    classID: 5,
+    e1: { ranks: [{ spec: "Brewmaster", score: 470, bracketData: 14, historicalPercent: 1, amount: 1, startTime: now - 90 * day }] },
+    e2: { ranks: [{ spec: "Brewmaster", score: 460, bracketData: 14, historicalPercent: 1, amount: 2, startTime: now - 91 * day }] },
+    e3: { ranks: [{ spec: "Mistweaver", score: 480, bracketData: 15, historicalPercent: 1, amount: 3, startTime: now }] },
+  };
+  assert.deepEqual(roleOrder(tankLead), ["tank", "healer"]);
+
+  // 1-1 top-key tie (the Zyntexx case) -> the recently played role wins,
+  // even against a higher raw score on the older role
+  const tie = {
+    classID: 5,
+    e1: { ranks: [{ spec: "Brewmaster", score: 470, bracketData: 14, historicalPercent: 1, amount: 1, startTime: now - 90 * day }] },
+    e2: { ranks: [{ spec: "Mistweaver", score: 460, bracketData: 14, historicalPercent: 1, amount: 2, startTime: now }] },
+  };
+  assert.deepEqual(roleOrder(tie), ["healer", "tank"]);
+
+  // dps runs exist but hold no dungeon's top key -> chip trails
+  const offRole = {
+    classID: 5,
+    e1: { ranks: [
+      { spec: "Mistweaver", score: 460, bracketData: 14, historicalPercent: 1, amount: 1, startTime: now },
+      { spec: "Windwalker", score: 300, bracketData: 10, historicalPercent: 1, amount: 2, startTime: now - day },
+    ] },
+  };
+  assert.deepEqual(roleOrder(offRole), ["healer", "dps"]);
+  assert.deepEqual(roleOrder(null), []);
+});
+
 test("rolesWithRuns lists every role the character has played", () => {
   const mixed = {
     classID: 5,
@@ -336,8 +391,11 @@ test("buildRolePlayers: healer table from hps, tank/dps from dps, per-run split"
       { spec: "Mistweaver", score: 420, bracketData: 12, historicalPercent: 88.0, amount: 900, startTime: 2000 },
     ] },
   };
-  const { detected, byRole } = buildRolePlayers(dps, hps);
-  assert.equal(detected, "healer", "newest run wins the recency weighting");
+  const { detected, order, topKeys, byRole } = buildRolePlayers(dps, hps);
+  assert.equal(detected, "healer", "the healer run is the dungeon's top key (420 > 400)");
+  assert.deepEqual(order, ["healer", "tank"], "top-key holder first, topless role trails");
+  assert.equal(topKeys.healer.keys, 1);
+  assert.equal(topKeys.tank, undefined, "tank holds no top key");
   assert.equal(byRole.tank.levels[12].dungeons[1].pct, 42.0, "tank run keeps its dps Key %");
   assert.equal(byRole.healer.levels[12].dungeons[1].pct, 88.0, "healer run uses its hps Key %");
   assert.equal(byRole.dps, undefined, "no dps-spec runs -> no dps table");
@@ -349,8 +407,10 @@ test("buildRolePlayers: healer table from hps, tank/dps from dps, per-run split"
   const noHps = buildRolePlayers(dps, null);
   assert.equal(noHps.byRole.healer, undefined);
   assert.equal(noHps.byRole.tank.levels[12].dungeons[1].pct, 42.0);
+  assert.deepEqual(noHps.order, ["tank"], "order only offers roles with tables");
+  assert.equal(noHps.detected, "tank");
 
-  assert.deepEqual(buildRolePlayers(null, null), { detected: null, byRole: {} });
+  assert.deepEqual(buildRolePlayers(null, null), { detected: null, order: [], topKeys: {}, byRole: {} });
 });
 
 test("hasRanks", () => {

@@ -129,6 +129,24 @@ test("roleChipsHTML: single role -> plain chip; multi-role -> sel/dim buttons", 
   assert.match(legacy, /<span class="role role-tank"/);
 });
 
+test("roleChipsHTML follows entry.order and shows top-key counts", () => {
+  const html = roleChipsHTML({
+    fullName: "Multi-Realm", selected: "healer", detected: "healer",
+    order: ["healer", "tank", "dps"],
+    topKeys: { healer: { keys: 5, score: 2300 }, tank: { keys: 3, score: 1300 } },
+    byRole: {
+      tank: { role: "tank", levels: {} },
+      healer: { role: "healer", levels: {} },
+      dps: { role: "dps", levels: {} },
+    },
+  });
+  const h = html.indexOf("role-healer"), t = html.indexOf("role-tank"), d = html.indexOf("role-dps");
+  assert.ok(h >= 0 && h < t && t < d, "chips render in top-key order, not fixed T/H/D");
+  assert.match(html, /holds 5 of their 8 top keys/, "solid chip tooltip");
+  assert.match(html, /holds 3 of their 8 top keys/, "dimmed chip tooltip");
+  assert.doesNotMatch(html, /holds 0/, "topless dps chip gets no count");
+});
+
 test("detailMatrixHTML: healer tables link to the healing tab", () => {
   const hpsRanks = { ranks: [{ historicalPercent: 88.0, bracketData: 12, amount: 900, spec: "Mistweaver", report: { code: "HEALC0DE", fightID: 5 } }] };
   const healer = playerFromResult({ classID: 5, [`e${AK}`]: hpsRanks }, "healer", "healer");

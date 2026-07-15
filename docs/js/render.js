@@ -95,17 +95,23 @@ export function roleChipHTML(role) {
 }
 
 // Role chips for a row. Single-role players get the plain chip; multi-role
-// players get one chip per played role — the viewed one solid, the others
-// dimmed and clickable (the row re-renders with that role's runs).
+// players get one chip per played role — ordered by how many of their top
+// keys (per-dungeon highest-score run) each role holds, most first. The
+// viewed role is solid, the others dimmed and clickable (the row
+// re-renders with that role's runs).
 export function roleChipsHTML(entry) {
   const byRole = entry?.byRole ?? {};
-  const roles = ["tank", "healer", "dps"].filter((r) => byRole[r]);
+  const roles = (entry?.order?.length ? entry.order : ["tank", "healer", "dps"])
+    .filter((r) => byRole[r]);
   if (roles.length === 0) return roleChipHTML(entry?.player?.role ?? entry?.detected);
   if (roles.length === 1) return roleChipHTML(roles[0]);
+  const totalTops = Object.values(entry?.topKeys ?? {}).reduce((a, v) => a + (v?.keys ?? 0), 0);
   return " " + roles.map((r) => {
     const [letter, cls, title] = ROLE_META[r];
     const state = r === entry.selected ? "sel" : "dim";
-    const hint = state === "dim" ? `${title} — click to judge them as this` : title;
+    const keys = entry?.topKeys?.[r]?.keys ?? 0;
+    const tops = keys > 0 ? ` — holds ${keys} of their ${totalTops} top keys` : "";
+    const hint = `${title}${tops}${state === "dim" ? " — click to judge them as this" : ""}`;
     return `<button type="button" class="role ${cls} ${state}" data-full="${esc(entry.fullName)}" data-role="${r}" title="${hint}">${letter}</button>`;
   }).join("");
 }

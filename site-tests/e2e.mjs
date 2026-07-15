@@ -329,11 +329,14 @@ try {
       assert.match(url.searchParams.get("chars"), /Foo-Area52/);
     });
 
-    await check("role switcher: recent healer main beats the old tank pile", async () => {
+    await check("role switcher: top-key holder leads, chips in top-key order", async () => {
       const row = page.locator("tr.row", { hasText: "Switcher-Area52" });
       const html = await row.innerHTML();
-      assert.match(html, /button[^>]*role-healer sel/, "H chip solid: recency wins");
+      assert.match(html, /button[^>]*role-healer sel/, "H chip solid: holds both top keys");
       assert.match(html, /button[^>]*role-tank dim/, "T chip present but dimmed");
+      assert.ok(html.indexOf("role-healer") < html.indexOf("role-tank"),
+        "H before T — ordered by top keys, not a fixed T/H/D order");
+      assert.match(html, /holds 2 of their 2 top keys/, "tooltip carries the count");
       assert.doesNotMatch(html, /role-dps/, "never played dps -> no D chip");
       const text = await row.innerText();
       assert.match(text, /92b/, "healer runs shown with their hps Key %");
