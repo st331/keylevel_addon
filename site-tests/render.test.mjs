@@ -114,12 +114,12 @@ test("roleChipsHTML: single role -> plain chip; multi-role -> sel/dim buttons", 
   assert.match(single, /<span class="role role-healer"/, "one role: not a button");
 
   const multi = roleChipsHTML({
-    fullName: "Multi-Realm", selected: "healer", detected: "healer",
+    fullName: "Multi-Realm", key: "Multi-Realm@us", selected: "healer", detected: "healer",
     byRole: { tank: { role: "tank", levels: {} }, healer: { role: "healer", levels: {} } },
   });
   assert.match(multi, /<button[^>]*role-healer sel"/, "viewed role is solid");
   assert.match(multi, /<button[^>]*role-tank dim"/, "other role dimmed");
-  assert.match(multi, /data-full="Multi-Realm"/);
+  assert.match(multi, /data-key="Multi-Realm@us"/);
   assert.match(multi, /data-role="tank"/);
   assert.match(multi, /click to judge/, "dimmed chip explains the click");
   assert.doesNotMatch(multi, /role-dps/, "unplayed role has no chip");
@@ -130,10 +130,11 @@ test("roleChipsHTML: single role -> plain chip; multi-role -> sel/dim buttons", 
 });
 
 test("roleChipsHTML follows entry.order and shows top-key counts", () => {
+  // deliberately NOT 8 total: a hardcoded per-season denominator must fail
   const html = roleChipsHTML({
     fullName: "Multi-Realm", selected: "healer", detected: "healer",
     order: ["healer", "tank", "dps"],
-    topKeys: { healer: { keys: 5, score: 2300 }, tank: { keys: 3, score: 1300 } },
+    topKeys: { healer: { keys: 4, score: 1800 }, tank: { keys: 3, score: 1300 } },
     byRole: {
       tank: { role: "tank", levels: {} },
       healer: { role: "healer", levels: {} },
@@ -142,8 +143,8 @@ test("roleChipsHTML follows entry.order and shows top-key counts", () => {
   });
   const h = html.indexOf("role-healer"), t = html.indexOf("role-tank"), d = html.indexOf("role-dps");
   assert.ok(h >= 0 && h < t && t < d, "chips render in top-key order, not fixed T/H/D");
-  assert.match(html, /holds 5 of their 8 top keys/, "solid chip tooltip");
-  assert.match(html, /holds 3 of their 8 top keys/, "dimmed chip tooltip");
+  assert.match(html, /holds 4 of their 7 top keys/, "solid chip tooltip");
+  assert.match(html, /holds 3 of their 7 top keys/, "dimmed chip tooltip");
   assert.doesNotMatch(html, /holds 0/, "topless dps chip gets no count");
 });
 
@@ -187,7 +188,17 @@ test("summaryHTML with byRole entries: active view renders, sort follows detecte
     "healer 95 (detected) outsorts Alice's 91.2 even while the tank view is shown");
   assert.match(html, />20<i class="sfx">b</, "tank view's numbers rendered");
   assert.doesNotMatch(html, />95<i class="sfx">b</, "healer numbers not shown while tank is selected");
-  assert.match(html, /data-full="Switch-Realm"/, "rows carry data-full for re-render state");
+  assert.match(html, /data-key="Switch-Realm"/, "rows carry data-key (fullName fallback) for re-render state");
+});
+
+test("summaryHTML keeps same-name characters from different regions distinct", () => {
+  const entries = [
+    { fullName: "Twin-Realm", key: "Twin-Realm@us", player: alice, slug: "realm", region: "us" },
+    { fullName: "Twin-Realm", key: "Twin-Realm@eu", player: alice, slug: "realm", region: "eu" },
+  ];
+  const html = summaryHTML(entries, { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS });
+  assert.match(html, /data-key="Twin-Realm@us"/, "each row keyed by full@region");
+  assert.match(html, /data-key="Twin-Realm@eu"/);
 });
 
 test("nameHTML uses class color and escapes", () => {

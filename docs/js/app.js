@@ -107,8 +107,10 @@ async function lookup() {
   }
   localStorage.setItem(LS.region, dropdownRegion);
   const level = Number($("level").value) || null;
-  const names = parsed.map((e) => e.full);
-  const byFull = new Map(parsed.map((e) => [e.full, e]));
+  // unique per-character key: the same Name-Realm can legitimately appear
+  // in two regions (two pasted URLs), so full alone is ambiguous
+  const keyOf = (c) => `${c.full}@${c.region ?? dropdownRegion}`;
+  const byKey = new Map(parsed.map((e) => [keyOf(e), e]));
 
   $("lookup").disabled = true;
   try {
@@ -133,15 +135,16 @@ async function lookup() {
     // characters: URLs carry an exact slug + region; typed names guess the
     // slug (with retries) and use the dropdown region
     const ctx = { token, ...endpoints() };
-    const results = new Map(); // full -> result|null
-    const slugs = new Map();   // full -> slug that resolved (or best guess)
-    const regions = new Map(); // full -> region actually used
+    const results = new Map(); // key -> result|null
+    const slugs = new Map();   // key -> slug that resolved (or best guess)
+    const regions = new Map(); // key -> region actually used
     let round = parsed.map((c) => {
       const reg = c.region ?? dropdownRegion;
-      regions.set(c.full, reg);
+      const k = keyOf(c);
+      regions.set(k, reg);
       const candidates = c.slug ? [c.slug] : slugCandidates(c.realm);
-      slugs.set(c.full, candidates[0]);
-      return { key: c.full, name: c.name, candidates, tried: 0, region: reg };
+      slugs.set(k, candidates[0]);
+      return { key: k, name: c.name, candidates, tried: 0, region: reg };
     });
     const perRequest = Math.max(1, Math.floor(16 / Math.max(1, zone.encounters.length)));
     while (round.length > 0) {
@@ -169,13 +172,13 @@ async function lookup() {
     // healer runs are ranked on healing — fetch hps for any character with
     // healer-spec runs (not just detected healer mains: a tank who also
     // heals needs both sides)
-    const hpsResults = new Map(); // full -> hps result
-    const needHps = names.filter((full) => rolesWithRuns(results.get(full) ?? null).has("healer"));
+    const hpsResults = new Map(); // key -> hps result
+    const needHps = [...byKey.keys()].filter((k) => rolesWithRuns(results.get(k) ?? null).has("healer"));
     if (needHps.length > 0) {
       setStatus(`fetching healing rankings for ${needHps.length} character(s)…`);
-      const batch = needHps.map((full) => ({
-        key: full, name: byFull.get(full).name,
-        serverSlug: slugs.get(full), region: regions.get(full),
+      const batch = needHps.map((k) => ({
+        key: k, name: byKey.get(k).name,
+        serverSlug: slugs.get(k), region: regions.get(k),
       }));
       for (let i = 0; i < batch.length; i += perRequest) {
         const fetched = await fetchCharacters(ctx, batch.slice(i, i + perRequest), zone.encounters, "hps");
@@ -183,9 +186,10 @@ async function lookup() {
       }
     }
 
-    const entries = names.map((full) => {
-      const dpsResult = results.get(full) ?? null;
-      const { detected, order, topKeys, byRole } = buildRolePlayers(dpsResult, hpsResults.get(full) ?? null);
+    const entries = parsed.map((c) => {
+      const k = keyOf(c);
+      const dpsResult = results.get(k) ?? null;
+      const { detected, order, topKeys, byRole } = buildRolePlayers(dpsResult, hpsResults.get(k) ?? null);
       const windowed = {};
       for (const [role, p] of Object.entries(byRole)) {
         windowed[role] = windowLevels(p, level, LEVEL_WINDOW);
@@ -194,15 +198,16 @@ async function lookup() {
       // its table while another role still has visible runs
       const selected = pickSelectedRole(order, windowed);
       return {
-        fullName: full,
+        fullName: c.full,
+        key: k,
         detected, selected, sortRole: selected, order, topKeys, byRole: windowed,
         // no per-role runs at all: unfiltered fallback keeps the old
         // "no M+ logs" / "no WCL character" rows working
         player: selected
           ? windowed[selected]
           : windowLevels(playerFromResult(dpsResult, detected), level, LEVEL_WINDOW),
-        slug: slugs.get(full),
-        region: regions.get(full),
+        slug: slugs.get(k),
+        region: regions.get(k),
       };
     });
     lastRender = { entries, level, encounter, encounters: zone.encounters };
@@ -233,21 +238,21 @@ let lastRender = null;
 function renderResults() {
   if (!lastRender) return;
   const open = new Set(
-    [...document.querySelectorAll("tr.detail-row.open")].map((r) => r.dataset.full),
+    [...document.querySelectorAll("tr.detail-row.open")].map((r) => r.dataset.key),
   );
   // the rebuild destroys the clicked chip: remember it to restore focus,
   // so keyboard users don't get dumped back to the top of the page
   const focused = document.activeElement?.closest?.("button.role[data-role]");
-  const focusKey = focused ? `${focused.dataset.full} ${focused.dataset.role}` : null;
+  const focusKey = focused ? `${focused.dataset.key} ${focused.dataset.role}` : null;
   $("results").innerHTML = summaryHTML(lastRender.entries, lastRender);
   for (const row of document.querySelectorAll("tr.detail-row")) {
-    if (open.has(row.dataset.full)) row.classList.add("open");
+    if (open.has(row.dataset.key)) row.classList.add("open");
   }
   wireRowToggles();
   wireRoleChips();
   if (focusKey) {
     for (const btn of document.querySelectorAll("button.role[data-role]")) {
-      if (`${btn.dataset.full} ${btn.dataset.role}` === focusKey) {
+      if (`${btn.dataset.key} ${btn.dataset.role}` === focusKey) {
         btn.focus();
         break;
       }
@@ -271,7 +276,7 @@ function wireRoleChips() {
   for (const btn of document.querySelectorAll("button.role[data-role]")) {
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      const entry = lastRender?.entries.find((e) => e.fullName === btn.dataset.full);
+      const entry = lastRender?.entries.find((e) => (e.key ?? e.fullName) === btn.dataset.key);
       const player = entry?.byRole?.[btn.dataset.role];
       if (!player) return;
       entry.selected = btn.dataset.role;

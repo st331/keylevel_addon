@@ -112,7 +112,7 @@ export function roleChipsHTML(entry) {
     const keys = entry?.topKeys?.[r]?.keys ?? 0;
     const tops = keys > 0 ? ` — holds ${keys} of their ${totalTops} top keys` : "";
     const hint = `${title}${tops}${state === "dim" ? " — click to judge them as this" : ""}`;
-    return `<button type="button" class="role ${cls} ${state}" data-full="${esc(entry.fullName)}" data-role="${r}" title="${hint}">${letter}</button>`;
+    return `<button type="button" class="role ${cls} ${state}" data-key="${esc(entry.key ?? entry.fullName)}" data-role="${r}" title="${hint}">${letter}</button>`;
   }).join("");
 }
 
@@ -213,12 +213,13 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
 
   rows.forEach((entry, i) => {
     const { fullName, player, slug, region, ev } = entry;
-    html += `<tr class="row" data-idx="${i}" data-full="${esc(fullName)}">
+    const key = esc(entry.key ?? fullName);
+    html += `<tr class="row" data-idx="${i}" data-key="${key}">
       <td>${nameHTML(fullName, player?.class)}${roleChipsHTML(entry)}${profileLinkHTML(region, slug, fullName)}</td>
       <td>${anyCellHTML(ev, level)}</td>
       <td>${dungeonCellHTML(ev, level, encounter?.id)}</td>
     </tr>
-    <tr class="detail-row" data-idx="${i}" data-full="${esc(fullName)}"><td colspan="3">${detailMatrixHTML(player, encounters, level)}</td></tr>`;
+    <tr class="detail-row" data-idx="${i}" data-key="${key}"><td colspan="3">${detailMatrixHTML(player, encounters, level)}</td></tr>`;
   });
 
   html += `</tbody></table></div>`;

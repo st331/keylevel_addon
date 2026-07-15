@@ -40,7 +40,10 @@ export function recencyScores(result) {
     if (!/^e\d+$/.test(alias)) continue;
     const seen = new Set(); // the API sometimes lists a run twice
     for (const rank of blob?.ranks ?? []) {
-      const key = `${rank?.bracketData}:${rank?.amount ?? pickPercent(rank)}`;
+      // real duplicates agree on every field; spec+startTime keep two
+      // genuinely different runs (other spec, other day) that happen to
+      // tie on amount from collapsing into one
+      const key = `${rank?.bracketData}:${rank?.amount ?? pickPercent(rank)}:${rank?.spec}:${rank?.startTime}`;
       if (seen.has(key)) continue;
       seen.add(key);
       all.push({
@@ -144,7 +147,9 @@ export function bestPerLevel(blob, filterRole) {
     const level = rank?.bracketData;
     const pct = pickPercent(rank);
     if (!Number.isInteger(level) || level < 2 || pct === null) continue;
-    const key = `${level}:${rank.amount ?? pct}`;
+    // spec+startTime so only true API duplicates collapse, never two
+    // different runs that tie on amount
+    const key = `${level}:${rank.amount ?? pct}:${rank.spec}:${rank.startTime}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const p = round1(pct);
