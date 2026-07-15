@@ -5,7 +5,7 @@
 // visitors just paste names. An undeployed/unconfigured copy shows a clear
 // notice instead of a setup flow.
 
-import { parseNamesInput, parseFullName, slugCandidates } from "./slugs.js";
+import { parseEntriesInput, slugCandidates } from "./slugs.js";
 import { getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
 import { playerFromResult, encounterByName, windowLevels, detectRole, hasRanks } from "./transform.js";
 import { summaryHTML } from "./render.js";
@@ -97,14 +97,16 @@ function populateDungeonSelect(encounters, selected) {
 // ---------------------------------------------------------------- lookup
 
 async function lookup() {
-  const names = parseNamesInput($("names").value);
-  if (names.length === 0) {
-    setStatus("paste at least one Name-Realm (the addon's Copy URL / Names button gives you these)", true);
+  const parsed = parseEntriesInput($("names").value);
+  if (parsed.length === 0) {
+    setStatus("paste at least one Name-Realm or a Raider.IO / Armory / Warcraft Logs character link", true);
     return;
   }
-  const region = $("region").value;
-  localStorage.setItem(LS.region, region);
+  const dropdownRegion = $("region").value;
+  localStorage.setItem(LS.region, dropdownRegion);
   const level = Number($("level").value) || null;
+  const names = parsed.map((e) => e.full);
+  const byFull = new Map(parsed.map((e) => [e.full, e]));
 
   $("lookup").disabled = true;
   try {
@@ -126,20 +128,18 @@ async function lookup() {
     populateDungeonSelect(zone.encounters, $("dungeon").value);
     const encounter = encounterByName(zone.encounters, $("dungeon").value) ?? null;
 
-    // characters: try most-likely realm slug, retry alternates for misses
+    // characters: URLs carry an exact slug + region; typed names guess the
+    // slug (with retries) and use the dropdown region
     const ctx = { token, ...endpoints() };
-    const chars = names
-      .map((full) => ({ full, parsed: parseFullName(full) }))
-      .filter((c) => c.parsed);
     const results = new Map(); // full -> result|null
     const slugs = new Map();   // full -> slug that resolved (or best guess)
-    let round = chars.map((c) => {
-      const candidates = slugCandidates(c.parsed.realm);
+    const regions = new Map(); // full -> region actually used
+    let round = parsed.map((c) => {
+      const reg = c.region ?? dropdownRegion;
+      regions.set(c.full, reg);
+      const candidates = c.slug ? [c.slug] : slugCandidates(c.realm);
       slugs.set(c.full, candidates[0]);
-      return {
-        key: c.full, name: c.parsed.name, realm: c.parsed.realm,
-        candidates, tried: 0, region,
-      };
+      return { key: c.full, name: c.name, candidates, tried: 0, region: reg };
     });
     const perRequest = Math.max(1, Math.floor(16 / Math.max(1, zone.encounters.length)));
     while (round.length > 0) {
@@ -173,10 +173,10 @@ async function lookup() {
     }
     if (healers.length > 0) {
       setStatus(`fetching healing rankings for ${healers.length} healer(s)…`);
-      const batch = healers.map((full) => {
-        const parsed = parseFullName(full);
-        return { key: full, name: parsed.name, serverSlug: slugs.get(full), region };
-      });
+      const batch = healers.map((full) => ({
+        key: full, name: byFull.get(full).name,
+        serverSlug: slugs.get(full), region: regions.get(full),
+      }));
       for (let i = 0; i < batch.length; i += perRequest) {
         const fetched = await fetchCharacters(ctx, batch.slice(i, i + perRequest), zone.encounters, "hps");
         for (const r of fetched) {
@@ -190,16 +190,17 @@ async function lookup() {
       fullName: full,
       player: windowLevels(playerFromResult(results.get(full) ?? null, roles.get(full)), level, LEVEL_WINDOW),
       slug: slugs.get(full),
-      region,
+      region: regions.get(full),
     }));
     $("results").innerHTML = summaryHTML(entries, { level, encounter, encounters: zone.encounters });
     wireRowToggles();
 
-    // make the current lookup shareable (same format the addon generates)
-    const share = new URLSearchParams({ region });
+    // make the current lookup shareable (same format the addon generates);
+    // original tokens are kept so pasted URLs keep their region/realm
+    const share = new URLSearchParams({ region: dropdownRegion });
     if (level) share.set("level", String(level));
     if ($("dungeon").value) share.set("dungeon", $("dungeon").value);
-    share.set("chars", names.join(","));
+    share.set("chars", parsed.map((e) => encodeURIComponent(e.token)).join(","));
     history.replaceState(null, "", location.pathname + "?" + share.toString());
 
     const windowNote = level ? ` · showing keys +${Math.max(2, level - LEVEL_WINDOW)}–+${level + LEVEL_WINDOW}` : "";
@@ -239,7 +240,10 @@ function initFromParams() {
     sel.value = p.get("dungeon");
   }
   if (p.get("chars")) {
-    $("names").value = p.get("chars").split(",").join("\n");
+    // tokens may be individually encoded (URLs from the share link)
+    $("names").value = p.get("chars").split(",").map((t) => {
+      try { return decodeURIComponent(t); } catch { return t; }
+    }).join("\n");
     return true;
   }
   return false;
