@@ -361,7 +361,9 @@ test("roleOrder: most top keys first; recency breaks ties; topless roles trail",
   };
   assert.deepEqual(roleOrder(tie), ["healer", "tank"]);
 
-  // dps runs exist but hold no dungeon's top key -> chip trails
+  // dps runs exist but hold no dungeon's top key -> NO dps chip at all
+  // (regression: Jò-Antonidas, a resto shaman with 121 healer runs and one
+  // Elemental run, showed a dps tag)
   const offRole = {
     classID: 5,
     e1: { ranks: [
@@ -369,7 +371,7 @@ test("roleOrder: most top keys first; recency breaks ties; topless roles trail",
       { spec: "Windwalker", score: 300, bracketData: 10, historicalPercent: 1, amount: 2, startTime: now - day },
     ] },
   };
-  assert.deepEqual(roleOrder(offRole), ["healer", "dps"]);
+  assert.deepEqual(roleOrder(offRole), ["healer"], "a topless role is noise, not a chip");
   assert.deepEqual(roleOrder(null), []);
 
   // top keys are the PRIMARY rule: 2 tank tops beat a healer whose recent
@@ -430,7 +432,7 @@ test("buildRolePlayers: healer table from hps, tank/dps from dps, per-run split"
   };
   const { detected, order, topKeys, byRole } = buildRolePlayers(dps, hps);
   assert.equal(detected, "healer", "the healer run is the dungeon's top key (420 > 400)");
-  assert.deepEqual(order, ["healer", "tank"], "top-key holder first, topless role trails");
+  assert.deepEqual(order, ["healer"], "topless tank gets no chip");
   assert.equal(topKeys.healer.keys, 1);
   assert.equal(topKeys.tank, undefined, "tank holds no top key");
   assert.equal(byRole.tank.levels[12].dungeons[1].pct, 42.0, "tank run keeps its dps Key %");
@@ -442,12 +444,13 @@ test("buildRolePlayers: healer table from hps, tank/dps from dps, per-run split"
   assert.equal(byRole.healer.metric, "hps");
 
   // no hps result (fetch skipped/failed): mislabeled numbers are worse than
-  // an absent table — healer view must be omitted, not built from dps
+  // an absent table — healer view must be omitted, not built from dps.
+  // The tank table exists but tank holds no top key, so no chips remain.
   const noHps = buildRolePlayers(dps, null);
   assert.equal(noHps.byRole.healer, undefined);
   assert.equal(noHps.byRole.tank.levels[12].dungeons[1].pct, 42.0);
-  assert.deepEqual(noHps.order, ["tank"], "order only offers roles with tables");
-  assert.equal(noHps.detected, "tank");
+  assert.deepEqual(noHps.order, [], "order only offers top-key roles with tables");
+  assert.equal(noHps.detected, null);
 
   assert.deepEqual(buildRolePlayers(null, null), { detected: null, order: [], topKeys: {}, byRole: {} });
 });

@@ -95,18 +95,18 @@ export function topKeyRoles(result) {
   return out;
 }
 
-// Which roles does this character play, in display order? Roles holding
-// the most top keys come first (that's their effective main); ties fall
-// to recency-weighted score (who they are *now*); roles with runs but no
-// top keys trail at the end.
+// Which roles matter for this character, in display order? Only roles
+// holding at least one top key get a chip — a lone off-role run out of a
+// hundred (one Elemental key on a resto shaman) is noise, not a role.
+// Most top keys first; ties fall to recency-weighted score (who they
+// are *now*).
 export function roleOrder(result) {
   if (!result) return [];
   const tops = topKeyRoles(result);
   const { score } = recencyScores(result);
-  const played = rolesWithRuns(result);
   const base = ["tank", "healer", "dps"];
   return base
-    .filter((r) => played.has(r))
+    .filter((r) => (tops[r]?.keys ?? 0) > 0)
     .sort((a, b) =>
       (tops[b]?.keys ?? 0) - (tops[a]?.keys ?? 0)
       || (score[b] ?? 0) - (score[a] ?? 0)
