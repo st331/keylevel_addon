@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { esc, pctSpan, pctTag, bamHTML, ageText, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML } from "../docs/js/render.js";
-import { playerFromResult } from "../docs/js/transform.js";
+import { esc, pctSpan, pctTag, bamHTML, ageText, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML, roleChipsHTML } from "../docs/js/render.js";
+import { playerFromResult, buildRolePlayers } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669;
 const ENCOUNTERS = [
@@ -104,6 +104,90 @@ test("roleChipHTML", async () => {
   assert.match(roleChipHTML("dps"), />D</);
   assert.equal(roleChipHTML(null), "");
   assert.equal(roleChipHTML(undefined), "");
+});
+
+test("roleChipsHTML: single role -> plain chip; multi-role -> sel/dim buttons", () => {
+  const single = roleChipsHTML({
+    fullName: "Solo-Realm", selected: "healer", detected: "healer",
+    byRole: { healer: { role: "healer", levels: {} } },
+  });
+  assert.match(single, /<span class="role role-healer"/, "one role: not a button");
+
+  const multi = roleChipsHTML({
+    fullName: "Multi-Realm", selected: "healer", detected: "healer",
+    byRole: { tank: { role: "tank", levels: {} }, healer: { role: "healer", levels: {} } },
+  });
+  assert.match(multi, /<button[^>]*role-healer sel"/, "viewed role is solid");
+  assert.match(multi, /<button[^>]*role-tank dim"/, "other role dimmed");
+  assert.match(multi, /data-full="Multi-Realm"/);
+  assert.match(multi, /data-role="tank"/);
+  assert.match(multi, /click to judge/, "dimmed chip explains the click");
+  assert.doesNotMatch(multi, /role-dps/, "unplayed role has no chip");
+
+  // legacy shape (no byRole): falls back to the player's role
+  const legacy = roleChipsHTML({ fullName: "Old-Realm", player: { role: "tank" } });
+  assert.match(legacy, /<span class="role role-tank"/);
+});
+
+test("roleChipsHTML follows entry.order and shows top-key counts", () => {
+  const html = roleChipsHTML({
+    fullName: "Multi-Realm", selected: "healer", detected: "healer",
+    order: ["healer", "tank", "dps"],
+    topKeys: { healer: { keys: 5, score: 2300 }, tank: { keys: 3, score: 1300 } },
+    byRole: {
+      tank: { role: "tank", levels: {} },
+      healer: { role: "healer", levels: {} },
+      dps: { role: "dps", levels: {} },
+    },
+  });
+  const h = html.indexOf("role-healer"), t = html.indexOf("role-tank"), d = html.indexOf("role-dps");
+  assert.ok(h >= 0 && h < t && t < d, "chips render in top-key order, not fixed T/H/D");
+  assert.match(html, /holds 5 of their 8 top keys/, "solid chip tooltip");
+  assert.match(html, /holds 3 of their 8 top keys/, "dimmed chip tooltip");
+  assert.doesNotMatch(html, /holds 0/, "topless dps chip gets no count");
+});
+
+test("detailMatrixHTML: hps-metric tables link to the healing tab", () => {
+  const hpsRanks = { ranks: [{ historicalPercent: 88.0, bracketData: 12, amount: 900, spec: "Mistweaver", report: { code: "HEALC0DE", fightID: 5 } }] };
+  const healer = playerFromResult({ classID: 5, [`e${AK}`]: hpsRanks }, "healer", "healer");
+  healer.metric = "hps"; // as buildRolePlayers tags it
+  const html = detailMatrixHTML(healer, ENCOUNTERS, 12);
+  assert.match(html, /\?fight=5&type=healing"/, "healing tab, not damage-done");
+
+  // the metric decides, not the role: a healer-role table built from dps
+  // percentiles (fallback path) must keep damage-done links
+  const fallback = playerFromResult({ classID: 5, [`e${AK}`]: hpsRanks }, "healer", "healer");
+  assert.match(detailMatrixHTML(fallback, ENCOUNTERS, 12), /type=damage-done"/);
+});
+
+test("summaryHTML with byRole entries: active view renders, sort follows detected", () => {
+  // switcher viewed as tank (weak) but detected healer (strong): the row
+  // must SORT by the healer table while SHOWING the tank numbers
+  const dps = {
+    classID: 5,
+    [`e${AK}`]: { ranks: [
+      { spec: "Brewmaster", score: 400, bracketData: 12, historicalPercent: 20.0, amount: 100, startTime: 1000 },
+      { spec: "Mistweaver", score: 450, bracketData: 12, historicalPercent: 10.0, amount: 50, startTime: 2000 },
+    ] },
+  };
+  const hps = {
+    classID: 5,
+    [`e${AK}`]: { ranks: [
+      { spec: "Brewmaster", score: 400, bracketData: 12, historicalPercent: 2.0, amount: 10, startTime: 1000 },
+      { spec: "Mistweaver", score: 450, bracketData: 12, historicalPercent: 95.0, amount: 900, startTime: 2000 },
+    ] },
+  };
+  const { detected, byRole } = buildRolePlayers(dps, hps);
+  const entries = [
+    { fullName: "Switch-Realm", detected, selected: "tank", byRole, player: byRole.tank, slug: "realm", region: "us" },
+    { fullName: "Alice-Area52", player: alice, slug: "area-52", region: "us" },
+  ];
+  const html = summaryHTML(entries, { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS });
+  assert.ok(html.indexOf("Switch-Realm") < html.indexOf("Alice-Area52"),
+    "healer 95 (detected) outsorts Alice's 91.2 even while the tank view is shown");
+  assert.match(html, />20<i class="sfx">b</, "tank view's numbers rendered");
+  assert.doesNotMatch(html, />95<i class="sfx">b</, "healer numbers not shown while tank is selected");
+  assert.match(html, /data-full="Switch-Realm"/, "rows carry data-full for re-render state");
 });
 
 test("nameHTML uses class color and escapes", () => {

@@ -82,15 +82,38 @@ export function nameHTML(name, cls) {
 }
 
 // Small role chip: T / H / D. Healers get a hint that their numbers are HPS.
+const ROLE_META = {
+  tank: ["T", "role-tank", "Tank — judged on damage (Key %)"],
+  healer: ["H", "role-healer", "Healer — judged on healing (HPS Key %)"],
+  dps: ["D", "role-dps", "DPS — judged on damage (Key %)"],
+};
+
 export function roleChipHTML(role) {
   if (!role) return "";
-  const map = {
-    tank: ["T", "role-tank", "Tank"],
-    healer: ["H", "role-healer", "Healer — ranked on healing (HPS Key %)"],
-    dps: ["D", "role-dps", "DPS"],
-  };
-  const [letter, cls, title] = map[role] ?? map.dps;
+  const [letter, cls, title] = ROLE_META[role] ?? ROLE_META.dps;
   return ` <span class="role ${cls}" title="${title}">${letter}</span>`;
+}
+
+// Role chips for a row. Single-role players get the plain chip; multi-role
+// players get one chip per played role — ordered by how many of their top
+// keys (per-dungeon highest-score run) each role holds, most first. The
+// viewed role is solid, the others dimmed and clickable (the row
+// re-renders with that role's runs).
+export function roleChipsHTML(entry) {
+  const byRole = entry?.byRole ?? {};
+  const roles = (entry?.order?.length ? entry.order : ["tank", "healer", "dps"])
+    .filter((r) => byRole[r]);
+  if (roles.length === 0) return roleChipHTML(entry?.player?.role ?? entry?.detected);
+  if (roles.length === 1) return roleChipHTML(roles[0]);
+  const totalTops = Object.values(entry?.topKeys ?? {}).reduce((a, v) => a + (v?.keys ?? 0), 0);
+  return " " + roles.map((r) => {
+    const [letter, cls, title] = ROLE_META[r];
+    const state = r === entry.selected ? "sel" : "dim";
+    const keys = entry?.topKeys?.[r]?.keys ?? 0;
+    const tops = keys > 0 ? ` — holds ${keys} of their ${totalTops} top keys` : "";
+    const hint = `${title}${tops}${state === "dim" ? " — click to judge them as this" : ""}`;
+    return `<button type="button" class="role ${cls} ${state}" data-full="${esc(entry.fullName)}" data-role="${r}" title="${hint}">${letter}</button>`;
+  }).join("");
 }
 
 // Small ↗ link to the character's full Warcraft Logs page.
@@ -117,6 +140,11 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
   }
   head += `</tr>`;
 
+  // tables built from healing rankings link to the report's healing tab;
+  // keyed off the metric, not the role, so a fallback table of dps-metric
+  // numbers never mislabels its links
+  const reportTab = player.metric === "hps" ? "healing" : "damage-done";
+
   let body = "";
   for (const e of encounters) {
     let row = `<tr><td class="dungeon-col">${esc(e.name)}</td>`;
@@ -131,7 +159,7 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
         const title = when ? `run on ${when} — open its report` : "open this run's report";
         const cell = d.report?.code
           ? `<a class="runlink" target="_blank" rel="noopener" title="${title}"
-               href="https://www.warcraftlogs.com/reports/${encodeURIComponent(d.report.code)}?fight=${Number(d.report.fightID) || 1}&type=damage-done">${pctSpan(d.pct)}</a>`
+               href="https://www.warcraftlogs.com/reports/${encodeURIComponent(d.report.code)}?fight=${Number(d.report.fightID) || 1}&type=${reportTab}">${pctSpan(d.pct)}</a>`
           : `<span${when ? ` title="run on ${when}"` : ""}>${pctSpan(d.pct)}</span>`;
         row += `<td class="${l === targetLevel ? "target-level" : ""}">${cell}</td>`;
       } else {
@@ -160,12 +188,19 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
 }
 
 // The main summary table.
-// entries: [{ fullName, player (windowed), slug, region }]
+// entries: [{ fullName, player (windowed), slug, region,
+//             detected?, selected?, sortRole?, order?, topKeys?, byRole? }]
+// player is the active view; sorting always follows the sortRole (the
+// initially shown role) so toggling one row's chips never reshuffles
+// the list.
 export function summaryHTML(entries, { level, encounter, encounters }) {
   const rows = entries
-    .map(({ fullName, player, slug, region }) => {
+    .map((entry) => {
+      const { player, byRole, sortRole, detected } = entry;
       const ev = evaluate(player, encounter?.id, level);
-      return { fullName, player, slug, region, ev, sort: sortValue(ev) };
+      const sortPlayer = byRole?.[sortRole ?? detected] ?? player;
+      const sortEv = sortPlayer === player ? ev : evaluate(sortPlayer, encounter?.id, level);
+      return { ...entry, ev, sort: sortValue(sortEv) };
     })
     .sort((a, b) => (a.sort !== b.sort ? b.sort - a.sort : a.fullName.localeCompare(b.fullName)));
 
@@ -176,13 +211,14 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
     <th>Applicant</th><th>${anyHead}</th><th>${dgHead}</th>
   </tr></thead><tbody>`;
 
-  rows.forEach(({ fullName, player, slug, region, ev }, i) => {
-    html += `<tr class="row" data-idx="${i}">
-      <td>${nameHTML(fullName, player?.class)}${roleChipHTML(player?.role)}${profileLinkHTML(region, slug, fullName)}</td>
+  rows.forEach((entry, i) => {
+    const { fullName, player, slug, region, ev } = entry;
+    html += `<tr class="row" data-idx="${i}" data-full="${esc(fullName)}">
+      <td>${nameHTML(fullName, player?.class)}${roleChipsHTML(entry)}${profileLinkHTML(region, slug, fullName)}</td>
       <td>${anyCellHTML(ev, level)}</td>
       <td>${dungeonCellHTML(ev, level, encounter?.id)}</td>
     </tr>
-    <tr class="detail-row" data-idx="${i}"><td colspan="3">${detailMatrixHTML(player, encounters, level)}</td></tr>`;
+    <tr class="detail-row" data-idx="${i}" data-full="${esc(fullName)}"><td colspan="3">${detailMatrixHTML(player, encounters, level)}</td></tr>`;
   });
 
   html += `</tbody></table></div>`;

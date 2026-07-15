@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { slugCandidates, parseFullName, parseNamesInput, parseCharacterURL, parseEntriesInput, slugToNormalizedRealm } from "../docs/js/slugs.js";
+import { slugCandidates, parseFullName, parseNamesInput, parseCharacterURL, parseEntriesInput, slugToNormalizedRealm, dedupeEntries } from "../docs/js/slugs.js";
 
 test("single-word realm", () => {
   assert.deepEqual(slugCandidates("Sargeras"), ["sargeras"]);
@@ -68,6 +68,21 @@ test("parseCharacterURL: warcraftlogs + encoded names + rejects junk", () => {
   assert.equal(parseCharacterURL("https://raider.io/characters/xx/area-52/foo"), null, "bad region");
   assert.equal(parseCharacterURL("https://raider.io/mythic-plus-rankings"), null);
   assert.equal(parseCharacterURL("Foo-Area52"), null);
+});
+
+test("dedupeEntries collapses a typed name and a URL of the same character", () => {
+  const entries = parseEntriesInput([
+    "Foo-Area52",
+    "https://worldofwarcraft.blizzard.com/en-us/character/us/area-52/foo",
+    "https://raider.io/characters/eu/area-52/foo", // different region: kept
+  ].join("\n"));
+  assert.equal(entries.length, 3, "parse alone can't collapse (regions unknown)");
+  const deduped = dedupeEntries(entries, "us");
+  assert.equal(deduped.length, 2, "typed@us == URL@us, but eu stays");
+  assert.equal(deduped[0].token, "Foo-Area52", "first occurrence wins");
+  assert.equal(deduped[1].region, "eu");
+  // different default region: the typed name no longer collides with the URL
+  assert.equal(dedupeEntries(entries, "kr").length, 3);
 });
 
 test("parseEntriesInput mixes names and URLs, URL region wins", () => {

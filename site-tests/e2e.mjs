@@ -51,12 +51,45 @@ const ZONES = {
 };
 
 function characterResponse(query) {
-  // Foo/Priestess exist on slug area52 (forces one slug retry from area-52);
-  // Ghost-Sargeras never exists. Priestess is a healer: weak dps Key %,
-  // strong hps Key % — the site must detect her role and show the hps side.
+  // Foo/Priestess/Switcher exist on slug area52 (forces one slug retry from
+  // area-52); Ghost-Sargeras never exists. Priestess is a healer: weak dps
+  // Key %, strong hps Key % — the site must detect her role and show the
+  // hps side. Switcher is a role-switcher modeled on a real case: a pile of
+  // old tank runs, then an exclusive switch to healing — recency must win,
+  // and each run must be judged by the role it was played in.
   // Eurodude exists ONLY at slug twisting-nether in region EU (pasted as a
   // raider.io URL — exact slug + region, no dropdown, no retries).
   const isHps = /metric: hps/.test(query);
+  const day = 86_400_000;
+  const switcherRanks = isHps
+    ? {
+      // healing percentiles: the Mistweaver runs' real numbers, the
+      // Brewmaster runs' garbage ones (must never be shown)
+      [`e${AK}`]: { ranks: [
+        { historicalPercent: 5.0, rankPercent: 5.0, bracketData: 12, amount: 20, spec: "Brewmaster", score: 400, startTime: Date.now() - 100 * day },
+        { historicalPercent: 6.0, rankPercent: 6.0, bracketData: 12, amount: 21, spec: "Brewmaster", score: 405, startTime: Date.now() - 95 * day },
+        { historicalPercent: 7.0, rankPercent: 7.0, bracketData: 12, amount: 22, spec: "Brewmaster", score: 410, startTime: Date.now() - 90 * day },
+        { historicalPercent: 90.0, rankPercent: 90.0, bracketData: 12, amount: 900, spec: "Mistweaver", score: 450, startTime: Date.now() - 20 * day },
+        { historicalPercent: 92.0, rankPercent: 92.0, bracketData: 12, amount: 910, spec: "Mistweaver", score: 455, startTime: Date.now() - 10 * day, report: { code: "HEALCODE1", fightID: 9 } },
+      ] },
+      [`e${PIT}`]: { ranks: [
+        { historicalPercent: 89.0, rankPercent: 89.0, bracketData: 13, amount: 950, spec: "Mistweaver", score: 470, startTime: Date.now() - 5 * day },
+      ] },
+    }
+    : {
+      // damage percentiles: the Brewmaster runs' real numbers, the
+      // Mistweaver runs' weak ones (healer dps — never shown either)
+      [`e${AK}`]: { ranks: [
+        { historicalPercent: 30.0, rankPercent: 30.0, bracketData: 12, amount: 300, spec: "Brewmaster", score: 400, startTime: Date.now() - 100 * day },
+        { historicalPercent: 35.0, rankPercent: 35.0, bracketData: 12, amount: 310, spec: "Brewmaster", score: 405, startTime: Date.now() - 95 * day },
+        { historicalPercent: 40.0, rankPercent: 40.0, bracketData: 12, amount: 320, spec: "Brewmaster", score: 410, startTime: Date.now() - 90 * day },
+        { historicalPercent: 25.0, rankPercent: 25.0, bracketData: 12, amount: 100, spec: "Mistweaver", score: 450, startTime: Date.now() - 20 * day },
+        { historicalPercent: 22.0, rankPercent: 22.0, bracketData: 12, amount: 110, spec: "Mistweaver", score: 455, startTime: Date.now() - 10 * day },
+      ] },
+      [`e${PIT}`]: { ranks: [
+        { historicalPercent: 28.0, rankPercent: 28.0, bracketData: 13, amount: 120, spec: "Mistweaver", score: 470, startTime: Date.now() - 5 * day },
+      ] },
+    };
   const out = {};
   const charRe = /(c\d+): character\(name: "([^"]+)", serverSlug: "([^"]+)", serverRegion: "([^"]+)"/g;
   let m;
@@ -68,6 +101,8 @@ function characterResponse(query) {
         [`e${AK}`]: { ranks: [{ historicalPercent: 95.0, rankPercent: 95.0, bracketData: 12, amount: 200, spec: "Arms", score: 450 }] },
         [`e${PIT}`]: { ranks: [] },
       };
+    } else if (name === "Switcher" && slug === "area52") {
+      out[alias] = { classID: 5, ...switcherRanks };
     } else if (name === "Priestess" && slug === "area52") {
       out[alias] = {
         classID: 7,
@@ -163,7 +198,9 @@ async function newPage() {
 }
 
 const RIO_URL = "https://raider.io/characters/eu/twisting-nether/Eurodude";
-const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Ghost-Sargeras,https%3A%2F%2Fraider.io%2Fcharacters%2Feu%2Ftwisting-nether%2FEurodude`;
+// the last token is an armory URL for Foo — the SAME character as the typed
+// "Foo-Area52" once the us dropdown region applies; it must collapse to one row
+const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Switcher-Area52,Ghost-Sargeras,https%3A%2F%2Fraider.io%2Fcharacters%2Feu%2Ftwisting-nether%2FEurodude,https%3A%2F%2Fworldofwarcraft.blizzard.com%2Fen-us%2Fcharacter%2Fus%2Farea-52%2Ffoo`;
 
 // ================= scenario 1: deployed site, zero setup ====================
 try {
@@ -184,7 +221,8 @@ try {
     await check("controls prefilled from the addon URL", async () => {
       assert.equal(await page.inputValue("#level"), "12");
       assert.equal(await page.inputValue("#region"), "us");
-      assert.match(await page.inputValue("#names"), /Foo-Area52\nPriestess-Area52\nGhost-Sargeras\nhttps:\/\/raider\.io/);
+      assert.match(await page.inputValue("#names"),
+        /Foo-Area52\nPriestess-Area52\nSwitcher-Area52\nGhost-Sargeras\nhttps:\/\/raider\.io.*\nhttps:\/\/worldofwarcraft/);
       assert.equal(await page.inputValue("#dungeon"), "Windrunner Spire");
     });
 
@@ -222,8 +260,9 @@ try {
       const fooRow = page.locator("tr.row", { hasText: "Foo-Area52" });
       assert.match(await fooRow.innerHTML(), /role-dps/, "dps chip on Foo");
       const hpsQueries = wcl.state.charQueries.filter((q) => /metric: hps/.test(q));
-      assert.equal(hpsQueries.length, 1, "exactly one hps refetch");
+      assert.equal(hpsQueries.length, 1, "one batched hps refetch");
       assert.match(hpsQueries[0], /Priestess/);
+      assert.match(hpsQueries[0], /Switcher/, "anyone with healer-spec runs is included");
       assert.doesNotMatch(hpsQueries[0], /Foo/, "dps players not refetched");
     });
 
@@ -253,7 +292,11 @@ try {
 
     await check("Foo sorts above Ghost", async () => {
       const names = await page.locator("tr.row .charname").allInnerTexts();
-      assert.deepEqual(names, ["Eurodude-TwistingNether", "Foo-Area52", "Priestess-Area52", "Ghost-Sargeras"]);
+      assert.deepEqual(names, ["Eurodude-TwistingNether", "Switcher-Area52", "Foo-Area52", "Priestess-Area52", "Ghost-Sargeras"]);
+    });
+
+    await check("typed name + armory URL of the same character = one row", async () => {
+      assert.equal(await page.locator("tr.row", { hasText: "Foo-Area52" }).count(), 1);
     });
 
     await check("clicking a row opens the dungeon × level matrix", async () => {
@@ -291,6 +334,51 @@ try {
       const url = new URL(page.url());
       assert.equal(url.searchParams.get("level"), "12");
       assert.match(url.searchParams.get("chars"), /Foo-Area52/);
+    });
+
+    await check("role switcher: top-key holder leads, chips in top-key order", async () => {
+      const row = page.locator("tr.row", { hasText: "Switcher-Area52" });
+      const html = await row.innerHTML();
+      assert.match(html, /button[^>]*role-healer sel/, "H chip solid: holds both top keys");
+      assert.match(html, /button[^>]*role-tank dim/, "T chip present but dimmed");
+      assert.ok(html.indexOf("role-healer") < html.indexOf("role-tank"),
+        "H before T — ordered by top keys, not a fixed T/H/D order");
+      assert.match(html, /holds 2 of their 2 top keys/, "tooltip carries the count");
+      assert.doesNotMatch(html, /role-dps/, "never played dps -> no D chip");
+      const text = await row.innerText();
+      assert.match(text, /92b/, "healer runs shown with their hps Key %");
+      assert.doesNotMatch(text, /40b/, "tank numbers not mixed in");
+      assert.doesNotMatch(text, /25b|22b/, "healer runs' dps percentiles never shown");
+    });
+
+    await check("clicking the dimmed T chip re-judges the row as a tank", async () => {
+      const namesBefore = await page.locator("tr.row .charname").allInnerTexts();
+      await page.locator("tr.row", { hasText: "Switcher-Area52" }).locator("button.role.dim").click();
+      const row = page.locator("tr.row", { hasText: "Switcher-Area52" });
+      assert.match(await row.innerHTML(), /button[^>]*role-tank sel/, "T chip now solid");
+      const text = await row.innerText();
+      assert.match(text, /40b/, "tank runs' dps Key % shown");
+      assert.doesNotMatch(text, /92b/, "healer view replaced");
+      assert.doesNotMatch(text, /7b/, "tank runs' hps percentiles never shown");
+      const namesAfter = await page.locator("tr.row .charname").allInnerTexts();
+      assert.deepEqual(namesAfter, namesBefore, "sort stays pinned to the detected role");
+    });
+
+    await check("chip click keeps keyboard focus on the chip", async () => {
+      // the click re-render destroys and recreates the button; focus must follow
+      const focus = await page.evaluate(() => {
+        const el = document.activeElement;
+        return el?.matches?.("button.role") ? `${el.dataset.full} ${el.dataset.role}` : null;
+      });
+      assert.equal(focus, "Switcher-Area52 tank", "recreated chip regains focus");
+    });
+
+    await check("healer detail matrix links to the healing tab", async () => {
+      await page.locator("tr.row", { hasText: "Switcher-Area52" }).locator("button.role.dim").click(); // back to H
+      await page.locator("tr.row", { hasText: "Switcher-Area52" }).click(); // open detail
+      const href = await page
+        .locator('tr.detail-row[data-full="Switcher-Area52"] a.runlink').first().getAttribute("href");
+      assert.equal(href, "https://www.warcraftlogs.com/reports/HEALCODE1?fight=9&type=healing");
     });
 
     await check("higher-level run counts for the dungeon column", async () => {

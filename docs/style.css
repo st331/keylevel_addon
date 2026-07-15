@@ -94,6 +94,12 @@ tr.row td:first-child{ white-space:nowrap }
 .role-tank  { color:#7aa8d8 }
 .role-healer{ color:#3ddc84 }
 .role-dps   { color:#d87a7a }
+/* multi-role players: chips become buttons; the viewed role is solid,
+   the others dimmed and clickable */
+button.role{ font-family:inherit; background:transparent; cursor:pointer; margin-left:.15rem }
+button.role.dim{ opacity:.35 }
+button.role.dim:hover{ opacity:.85 }
+button.role.sel{ border-color:currentColor }
 .wcl-link{
   font-size:.78rem; opacity:.55; padding:0 .15rem;
 }

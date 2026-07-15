@@ -94,6 +94,23 @@ export function parseEntriesInput(text) {
   return out;
 }
 
+// Drop entries that resolve to the same character once the default region
+// is known: a typed "Foo-Area52" and a pasted URL for the same character
+// carry different region hints at parse time (none vs explicit), so
+// parseEntriesInput alone can't collapse them.
+export function dedupeEntries(entries, defaultRegion) {
+  const seen = new Set();
+  const out = [];
+  for (const e of entries) {
+    const key = `${e.full}@${e.region ?? defaultRegion ?? ""}`.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(e);
+    }
+  }
+  return out;
+}
+
 // Back-compat helper: just the resolved full names.
 export function parseNamesInput(text) {
   return parseEntriesInput(text).map((e) => e.full);
