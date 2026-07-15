@@ -54,13 +54,21 @@ function characterResponse(query) {
   // Foo/Priestess exist on slug area52 (forces one slug retry from area-52);
   // Ghost-Sargeras never exists. Priestess is a healer: weak dps Key %,
   // strong hps Key % — the site must detect her role and show the hps side.
+  // Eurodude exists ONLY at slug twisting-nether in region EU (pasted as a
+  // raider.io URL — exact slug + region, no dropdown, no retries).
   const isHps = /metric: hps/.test(query);
   const out = {};
-  const charRe = /(c\d+): character\(name: "([^"]+)", serverSlug: "([^"]+)"/g;
+  const charRe = /(c\d+): character\(name: "([^"]+)", serverSlug: "([^"]+)", serverRegion: "([^"]+)"/g;
   let m;
   while ((m = charRe.exec(query)) !== null) {
-    const [, alias, name, slug] = m;
-    if (name === "Priestess" && slug === "area52") {
+    const [, alias, name, slug, region] = m;
+    if (name === "Eurodude" && slug === "twisting-nether" && region === "eu" && !isHps) {
+      out[alias] = {
+        classID: 11,
+        [`e${AK}`]: { ranks: [{ historicalPercent: 95.0, rankPercent: 95.0, bracketData: 12, amount: 200, spec: "Arms", score: 450 }] },
+        [`e${PIT}`]: { ranks: [] },
+      };
+    } else if (name === "Priestess" && slug === "area52") {
       out[alias] = {
         classID: 7,
         [`e${AK}`]: { ranks: [isHps
@@ -154,7 +162,8 @@ async function newPage() {
   return page;
 }
 
-const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Ghost-Sargeras`;
+const RIO_URL = "https://raider.io/characters/eu/twisting-nether/Eurodude";
+const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Ghost-Sargeras,https%3A%2F%2Fraider.io%2Fcharacters%2Feu%2Ftwisting-nether%2FEurodude`;
 
 // ================= scenario 1: deployed site, zero setup ====================
 try {
@@ -175,7 +184,7 @@ try {
     await check("controls prefilled from the addon URL", async () => {
       assert.equal(await page.inputValue("#level"), "12");
       assert.equal(await page.inputValue("#region"), "us");
-      assert.match(await page.inputValue("#names"), /Foo-Area52\nPriestess-Area52\nGhost-Sargeras/);
+      assert.match(await page.inputValue("#names"), /Foo-Area52\nPriestess-Area52\nGhost-Sargeras\nhttps:\/\/raider\.io/);
       assert.equal(await page.inputValue("#dungeon"), "Windrunner Spire");
     });
 
@@ -218,6 +227,22 @@ try {
       assert.doesNotMatch(hpsQueries[0], /Foo/, "dps players not refetched");
     });
 
+    await check("raider.io URL: exact slug + URL region used, dropdown ignored", async () => {
+      const row = page.locator("tr.row", { hasText: "Eurodude-TwistingNether" });
+      assert.match(await row.innerText(), /95b/, "found via exact slug + eu region");
+      assert.equal(await page.inputValue("#region"), "us", "dropdown still us");
+      const tnQueries = wcl.state.charQueries.filter((q) => /twisting-nether/.test(q));
+      assert.equal(tnQueries.length, 1, "exact slug: no retry rounds");
+      assert.match(tnQueries[0], /serverRegion: "eu"/, "URL region used in the query");
+      const href = await row.locator("a.wcl-link").getAttribute("href");
+      assert.equal(href, "https://www.warcraftlogs.com/character/eu/twisting-nether/Eurodude");
+    });
+
+    await check("share URL keeps the pasted link token", async () => {
+      const url = new URL(page.url());
+      assert.match(url.searchParams.get("chars"), /raider\.io/);
+    });
+
     await check("no separate stats column exists", async () => {
       const head = await page.locator("table.summary thead").innerText();
       assert.doesNotMatch(head, /avg · med/i);
@@ -228,7 +253,7 @@ try {
 
     await check("Foo sorts above Ghost", async () => {
       const names = await page.locator("tr.row .charname").allInnerTexts();
-      assert.deepEqual(names, ["Foo-Area52", "Priestess-Area52", "Ghost-Sargeras"]);
+      assert.deepEqual(names, ["Eurodude-TwistingNether", "Foo-Area52", "Priestess-Area52", "Ghost-Sargeras"]);
     });
 
     await check("clicking a row opens the dungeon × level matrix", async () => {
@@ -257,7 +282,8 @@ try {
     });
 
     await check("names link to the Warcraft Logs profile", async () => {
-      const href = await page.locator("tr.row a.wcl-link").first().getAttribute("href");
+      const href = await page.locator("tr.row", { hasText: "Foo-Area52" })
+        .locator("a.wcl-link").getAttribute("href");
       assert.equal(href, "https://www.warcraftlogs.com/character/us/area52/Foo");
     });
 
