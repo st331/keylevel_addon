@@ -286,6 +286,18 @@ test("detectRole: recent runs outweigh an older, larger pile (role switcher)", (
   assert.equal(detectRole(duped), "dps", "dupe collapses to one healer run");
 });
 
+test("detectRole dedupe never merges two different runs that tie on amount", () => {
+  const now = 1_780_000_000_000, day = 86_400_000;
+  // no amounts, identical percentile, but different spec + day: both count.
+  // With a weak dedupe key both hash alike and the tank run vanishes,
+  // flipping the answer to healer.
+  const r = { classID: 5, e1: { ranks: [
+    { spec: "Mistweaver", score: 400, bracketData: 12, historicalPercent: 50, startTime: now },
+    { spec: "Brewmaster", score: 500, bracketData: 12, historicalPercent: 50, startTime: now - day },
+  ] } };
+  assert.equal(detectRole(r), "tank", "500*0.9 = 450 beats 400 — only if the tank run survives");
+});
+
 test("playerFromResult carries the role; override wins; filterRole filters", () => {
   const result = {
     classID: 7,

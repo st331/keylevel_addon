@@ -29,7 +29,11 @@ if node -e "require.resolve('playwright')" 2>/dev/null; then
   fi
   node site-tests/e2e.mjs
 else
-  echo "skipped: playwright not installed (run: npm install && npx playwright install chromium)"
+  # never report success while silently skipping a whole test tier
+  echo "ERROR: playwright not installed — e2e tests NOT run" >&2
+  echo "       (fix: npm install && npx playwright install chromium)" >&2
+  echo "==> checks INCOMPLETE (e2e skipped)"
+  exit 1
 fi
 
 echo "==> all checks passed"

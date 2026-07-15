@@ -101,6 +101,19 @@ function characterResponse(query) {
         [`e${AK}`]: { ranks: [{ historicalPercent: 95.0, rankPercent: 95.0, bracketData: 12, amount: 200, spec: "Arms", score: 450 }] },
         [`e${PIT}`]: { ranks: [] },
       };
+    } else if (name === "Eurodude" && slug === "twisting-nether" && region === "us" && !isHps) {
+      // same Name-Realm as the EU character but a DIFFERENT person in
+      // another region — must get its own independent row/chips.
+      // Multi-role: the Brewmaster run is the top key (tank leads) even
+      // though the Windwalker run is more recent.
+      out[alias] = {
+        classID: 5,
+        [`e${AK}`]: { ranks: [
+          { historicalPercent: 55.0, rankPercent: 55.0, bracketData: 12, amount: 500, spec: "Brewmaster", score: 420, startTime: Date.now() - 30 * day },
+          { historicalPercent: 45.0, rankPercent: 45.0, bracketData: 12, amount: 480, spec: "Windwalker", score: 400, startTime: Date.now() - 5 * day },
+        ] },
+        [`e${PIT}`]: { ranks: [] },
+      };
     } else if (name === "Switcher" && slug === "area52") {
       out[alias] = { classID: 5, ...switcherRanks };
     } else if (name === "Priestess" && slug === "area52") {
@@ -200,7 +213,7 @@ async function newPage() {
 const RIO_URL = "https://raider.io/characters/eu/twisting-nether/Eurodude";
 // the last token is an armory URL for Foo — the SAME character as the typed
 // "Foo-Area52" once the us dropdown region applies; it must collapse to one row
-const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Switcher-Area52,Ghost-Sargeras,https%3A%2F%2Fraider.io%2Fcharacters%2Feu%2Ftwisting-nether%2FEurodude,https%3A%2F%2Fworldofwarcraft.blizzard.com%2Fen-us%2Fcharacter%2Fus%2Farea-52%2Ffoo`;
+const QUERY = `?region=us&level=12&dungeon=Windrunner%20Spire&chars=Foo-Area52,Priestess-Area52,Switcher-Area52,Ghost-Sargeras,https%3A%2F%2Fraider.io%2Fcharacters%2Feu%2Ftwisting-nether%2FEurodude,https%3A%2F%2Fworldofwarcraft.blizzard.com%2Fen-us%2Fcharacter%2Fus%2Farea-52%2Ffoo,https%3A%2F%2Fraider.io%2Fcharacters%2Fus%2Ftwisting-nether%2FEurodude`;
 
 // ================= scenario 1: deployed site, zero setup ====================
 try {
@@ -267,7 +280,7 @@ try {
     });
 
     await check("raider.io URL: exact slug + URL region used, dropdown ignored", async () => {
-      const row = page.locator("tr.row", { hasText: "Eurodude-TwistingNether" });
+      const row = page.locator('tr.row[data-key="Eurodude-TwistingNether@eu"]');
       assert.match(await row.innerText(), /95b/, "found via exact slug + eu region");
       assert.equal(await page.inputValue("#region"), "us", "dropdown still us");
       const tnQueries = wcl.state.charQueries.filter((q) => /twisting-nether/.test(q));
@@ -275,6 +288,24 @@ try {
       assert.match(tnQueries[0], /serverRegion: "eu"/, "URL region used in the query");
       const href = await row.locator("a.wcl-link").getAttribute("href");
       assert.equal(href, "https://www.warcraftlogs.com/character/eu/twisting-nether/Eurodude");
+    });
+
+    await check("same Name-Realm in two regions = two independent rows", async () => {
+      assert.equal(await page.locator("tr.row", { hasText: "Eurodude-TwistingNether" }).count(), 2);
+      const usRow = page.locator('tr.row[data-key="Eurodude-TwistingNether@us"]');
+      assert.match(await usRow.innerText(), /55b/, "US monk's tank Key % (its own data)");
+      assert.match(await usRow.innerHTML(), /role-tank sel/, "top key beats the newer dps run");
+    });
+
+    await check("chip click on a duplicate-name row targets THAT row only", async () => {
+      await page.locator('tr.row[data-key="Eurodude-TwistingNether@us"] button.role.dim').click();
+      const usRow = page.locator('tr.row[data-key="Eurodude-TwistingNether@us"]');
+      assert.match(await usRow.innerText(), /45b/, "US row re-judged as dps");
+      assert.match(await usRow.innerHTML(), /role-dps sel/);
+      const euRow = page.locator('tr.row[data-key="Eurodude-TwistingNether@eu"]');
+      assert.match(await euRow.innerText(), /95b/, "EU row untouched");
+      // put it back so later checks see the default state
+      await page.locator('tr.row[data-key="Eurodude-TwistingNether@us"] button.role.dim').click();
     });
 
     await check("share URL keeps the pasted link token", async () => {
@@ -292,7 +323,7 @@ try {
 
     await check("Foo sorts above Ghost", async () => {
       const names = await page.locator("tr.row .charname").allInnerTexts();
-      assert.deepEqual(names, ["Eurodude-TwistingNether", "Switcher-Area52", "Foo-Area52", "Priestess-Area52", "Ghost-Sargeras"]);
+      assert.deepEqual(names, ["Eurodude-TwistingNether", "Switcher-Area52", "Foo-Area52", "Priestess-Area52", "Eurodude-TwistingNether", "Ghost-Sargeras"]);
     });
 
     await check("typed name + armory URL of the same character = one row", async () => {
@@ -368,16 +399,16 @@ try {
       // the click re-render destroys and recreates the button; focus must follow
       const focus = await page.evaluate(() => {
         const el = document.activeElement;
-        return el?.matches?.("button.role") ? `${el.dataset.full} ${el.dataset.role}` : null;
+        return el?.matches?.("button.role") ? `${el.dataset.key} ${el.dataset.role}` : null;
       });
-      assert.equal(focus, "Switcher-Area52 tank", "recreated chip regains focus");
+      assert.equal(focus, "Switcher-Area52@us tank", "recreated chip regains focus");
     });
 
     await check("healer detail matrix links to the healing tab", async () => {
       await page.locator("tr.row", { hasText: "Switcher-Area52" }).locator("button.role.dim").click(); // back to H
       await page.locator("tr.row", { hasText: "Switcher-Area52" }).click(); // open detail
       const href = await page
-        .locator('tr.detail-row[data-full="Switcher-Area52"] a.runlink').first().getAttribute("href");
+        .locator('tr.detail-row[data-key="Switcher-Area52@us"] a.runlink').first().getAttribute("href");
       assert.equal(href, "https://www.warcraftlogs.com/reports/HEALCODE1?fight=9&type=healing");
     });
 
