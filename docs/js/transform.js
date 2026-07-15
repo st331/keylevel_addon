@@ -25,22 +25,41 @@ export function roleOfSpec(spec) {
   return "dps";
 }
 
-// Which role does this character mainly play? Sum the M+ score of their
-// runs per role (runs as tiebreaker); dps wins remaining ties. null when
-// there are no runs to judge by.
+// Which role does this character mainly play *now*? Their runs (newest
+// first) are score-summed per role with an exponential decay per run, so
+// the last ~10-15 runs dominate: a tank who switched to healing mid-season
+// reads as a healer, but one novelty off-role run can't flip a long main.
+// Plain all-time score sums fail exactly that case — months of old
+// tank runs outweighing a current healer main. Runs break score ties;
+// dps wins remaining ties. null when there are no runs to judge by.
+export const ROLE_RECENCY_DECAY = 0.9;
+
 export function detectRole(result) {
   if (!result) return null;
-  const score = { tank: 0, healer: 0, dps: 0 };
-  const runs = { tank: 0, healer: 0, dps: 0 };
+  const all = [];
   for (const [alias, blob] of Object.entries(result)) {
     if (!/^e\d+$/.test(alias)) continue;
+    const seen = new Set(); // the API sometimes lists a run twice
     for (const rank of blob?.ranks ?? []) {
-      const role = roleOfSpec(rank?.spec);
-      score[role] += rank?.score ?? 0;
-      runs[role] += 1;
+      const key = `${rank?.bracketData}:${rank?.amount ?? pickPercent(rank)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      all.push({
+        role: roleOfSpec(rank?.spec),
+        // score can be missing: still count the run, so recency order matters
+        score: rank?.score || 1,
+        when: typeof rank?.startTime === "number" ? rank.startTime : 0,
+      });
     }
   }
-  if (runs.tank + runs.healer + runs.dps === 0) return null;
+  if (all.length === 0) return null;
+  all.sort((a, b) => b.when - a.when);
+  const score = { tank: 0, healer: 0, dps: 0 };
+  const runs = { tank: 0, healer: 0, dps: 0 };
+  all.forEach((r, i) => {
+    score[r.role] += r.score * Math.pow(ROLE_RECENCY_DECAY, i);
+    runs[r.role] += 1;
+  });
   let best = "dps";
   for (const r of ["healer", "tank"]) {
     if (score[r] > score[best] || (score[r] === score[best] && runs[r] > runs[best])) best = r;
@@ -72,11 +91,13 @@ export function pickPercent(rank) {
 // pct/spec from the best run at that level, pcts = every run's percentile
 // (so best/average/median can be shown). The API sometimes lists the same
 // run twice (identical amount at the same level) — those are deduped so
-// they don't skew averages.
-export function bestPerLevel(blob) {
+// they don't skew averages. filterRole keeps only runs played in that role
+// (a run is judged by the job its spec was doing, not the player's main).
+export function bestPerLevel(blob, filterRole) {
   const out = {};
   const seen = new Set();
   for (const rank of blob?.ranks ?? []) {
+    if (filterRole && roleOfSpec(rank?.spec) !== filterRole) continue;
     const level = rank?.bracketData;
     const pct = pickPercent(rank);
     if (!Number.isInteger(level) || level < 2 || pct === null) continue;
@@ -105,14 +126,15 @@ export function bestPerLevel(blob) {
 // A null result (character not on WCL) -> { missing: true }.
 // role can be passed in (e.g. detected from the dps pass while building
 // from the hps pass); otherwise it's detected from this result.
-export function playerFromResult(result, role) {
+// filterRole restricts the table to runs played in that role.
+export function playerFromResult(result, role, filterRole) {
   if (!result) return { missing: true };
   const levels = {};
   for (const [alias, blob] of Object.entries(result)) {
     const m = /^e(\d+)$/.exec(alias);
     if (!m) continue;
     const encID = Number(m[1]);
-    for (const [levelStr, entry] of Object.entries(bestPerLevel(blob))) {
+    for (const [levelStr, entry] of Object.entries(bestPerLevel(blob, filterRole))) {
       const level = Number(levelStr);
       levels[level] ??= { best: 0, runs: 0, dungeons: {} };
       levels[level].dungeons[encID] = entry;
@@ -121,6 +143,36 @@ export function playerFromResult(result, role) {
     }
   }
   return { class: classToken(result.classID), role: role ?? detectRole(result), levels };
+}
+
+// Which roles has this character actually played (any spec, any run)?
+export function rolesWithRuns(result) {
+  const out = new Set();
+  if (!result) return out;
+  for (const [alias, blob] of Object.entries(result)) {
+    if (!/^e\d+$/.test(alias)) continue;
+    for (const rank of blob?.ranks ?? []) out.add(roleOfSpec(rank?.spec));
+  }
+  return out;
+}
+
+// Per-role tables for one character, each run judged by the role it was
+// played in: healer-spec runs take their percentiles from the hps result
+// (healers are ranked on healing), tank/dps-spec runs from the dps result.
+// Roles with no runs are absent. `detected` is the recency-weighted main.
+export function buildRolePlayers(dpsResult, hpsResult) {
+  if (!dpsResult) return { detected: null, byRole: {} };
+  const detected = detectRole(dpsResult);
+  const byRole = {};
+  for (const role of ["tank", "healer", "dps"]) {
+    // never fall back to dps percentiles for healer runs: mislabeled
+    // numbers are worse than an absent table
+    const src = role === "healer" ? hpsResult : dpsResult;
+    if (!src) continue;
+    const p = playerFromResult(src, role, role);
+    if (Object.keys(p.levels).length > 0) byRole[role] = p;
+  }
+  return { detected, byRole };
 }
 
 // Does a result contain any usable ranked runs at all?

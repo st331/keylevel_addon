@@ -4,7 +4,7 @@ import {
   bestPerLevel, pickPercent, playerFromResult, evaluate,
   tierClass, sortValue, encounterByName, classToken,
   windowLevels, average, median,
-  roleOfSpec, detectRole, hasRanks,
+  roleOfSpec, detectRole, hasRanks, rolesWithRuns, buildRolePlayers,
 } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669, MISTS = 62290;
@@ -246,13 +246,111 @@ test("detectRole picks the role holding the most score", () => {
   assert.equal(detectRole(tie), "healer", "zero scores -> run count decides");
 });
 
-test("playerFromResult carries the role; override wins", () => {
+test("detectRole: recent runs outweigh an older, larger pile (role switcher)", () => {
+  // modeled on a real case (Zyntexx-Draenor): months of tank runs, then an
+  // exclusive switch to healing — the current main must win
+  const day = 86_400_000;
+  const now = 1_780_000_000_000;
+  const tankRuns = Array.from({ length: 30 }, (_, i) => ({
+    spec: "Brewmaster", score: 450, bracketData: 10 + (i % 5),
+    historicalPercent: 50, amount: 1000 + i, startTime: now - (60 + i) * day,
+  }));
+  const healRuns = Array.from({ length: 8 }, (_, i) => ({
+    spec: "Mistweaver", score: 460, bracketData: 15 + (i % 3),
+    historicalPercent: 70, amount: 2000 + i, startTime: now - i * day,
+  }));
+  const switcher = { classID: 5, e1: { ranks: [...tankRuns, ...healRuns] } };
+  assert.equal(detectRole(switcher), "healer", "8 fresh healer runs beat 30 stale tank runs");
+
+  // ...but one novelty off-role run can't flip a long active main
+  const oneOff = {
+    classID: 5,
+    e1: { ranks: [
+      ...Array.from({ length: 20 }, (_, i) => ({
+        spec: "Brewmaster", score: 450, bracketData: 12,
+        historicalPercent: 50, amount: 1000 + i, startTime: now - (2 + i) * day,
+      })),
+      { spec: "Mistweaver", score: 470, bracketData: 12, historicalPercent: 70, amount: 3000, startTime: now },
+    ] },
+  };
+  assert.equal(detectRole(oneOff), "tank", "a single fresh healer run is not a re-main");
+
+  // duplicated API rows must not double-weight a role: deduped, dps wins
+  // (500 * 0.9 = 450 > 400); with the dupe kept, healer would win (760)
+  const duped = { classID: 5, e1: { ranks: [
+    { spec: "Mistweaver", score: 400, bracketData: 12, historicalPercent: 70, amount: 1, startTime: now },
+    { spec: "Mistweaver", score: 400, bracketData: 12, historicalPercent: 70, amount: 1, startTime: now },
+    { spec: "Windwalker", score: 500, bracketData: 12, historicalPercent: 70, amount: 2, startTime: now - day },
+  ] } };
+  assert.equal(detectRole(duped), "dps", "dupe collapses to one healer run");
+});
+
+test("playerFromResult carries the role; override wins; filterRole filters", () => {
   const result = {
     classID: 7,
     e1: { ranks: [{ spec: "Discipline", score: 400, bracketData: 12, historicalPercent: 50, amount: 1 }] },
   };
   assert.equal(playerFromResult(result).role, "healer");
   assert.equal(playerFromResult(result, "dps").role, "dps", "explicit role wins");
+
+  const mixed = {
+    classID: 5,
+    e1: { ranks: [
+      { spec: "Brewmaster", score: 400, bracketData: 12, historicalPercent: 30, amount: 1 },
+      { spec: "Mistweaver", score: 420, bracketData: 13, historicalPercent: 80, amount: 2 },
+    ] },
+  };
+  const tankOnly = playerFromResult(mixed, "tank", "tank");
+  assert.deepEqual(Object.keys(tankOnly.levels), ["12"], "healer run filtered out");
+  const healOnly = playerFromResult(mixed, "healer", "healer");
+  assert.deepEqual(Object.keys(healOnly.levels), ["13"], "tank run filtered out");
+});
+
+test("rolesWithRuns lists every role the character has played", () => {
+  const mixed = {
+    classID: 5,
+    e1: { ranks: [
+      { spec: "Brewmaster", bracketData: 12, historicalPercent: 30, amount: 1 },
+      { spec: "Mistweaver", bracketData: 13, historicalPercent: 80, amount: 2 },
+    ] },
+  };
+  assert.deepEqual([...rolesWithRuns(mixed)].sort(), ["healer", "tank"]);
+  assert.deepEqual([...rolesWithRuns(null)], []);
+  assert.deepEqual([...rolesWithRuns({ classID: 4, e1: { ranks: [] } })], []);
+});
+
+test("buildRolePlayers: healer table from hps, tank/dps from dps, per-run split", () => {
+  // same runs in both results — only the percentiles differ by metric.
+  // The healer's tank run must never surface hps numbers and vice versa.
+  const dps = {
+    classID: 5,
+    e1: { ranks: [
+      { spec: "Brewmaster", score: 400, bracketData: 12, historicalPercent: 42.0, amount: 100, startTime: 1000 },
+      { spec: "Mistweaver", score: 420, bracketData: 12, historicalPercent: 15.0, amount: 50, startTime: 2000 },
+    ] },
+  };
+  const hps = {
+    classID: 5,
+    e1: { ranks: [
+      { spec: "Brewmaster", score: 400, bracketData: 12, historicalPercent: 3.0, amount: 20, startTime: 1000 },
+      { spec: "Mistweaver", score: 420, bracketData: 12, historicalPercent: 88.0, amount: 900, startTime: 2000 },
+    ] },
+  };
+  const { detected, byRole } = buildRolePlayers(dps, hps);
+  assert.equal(detected, "healer", "newest run wins the recency weighting");
+  assert.equal(byRole.tank.levels[12].dungeons[1].pct, 42.0, "tank run keeps its dps Key %");
+  assert.equal(byRole.healer.levels[12].dungeons[1].pct, 88.0, "healer run uses its hps Key %");
+  assert.equal(byRole.dps, undefined, "no dps-spec runs -> no dps table");
+  assert.equal(byRole.tank.role, "tank");
+  assert.equal(byRole.healer.role, "healer");
+
+  // no hps result (fetch skipped/failed): mislabeled numbers are worse than
+  // an absent table — healer view must be omitted, not built from dps
+  const noHps = buildRolePlayers(dps, null);
+  assert.equal(noHps.byRole.healer, undefined);
+  assert.equal(noHps.byRole.tank.levels[12].dungeons[1].pct, 42.0);
+
+  assert.deepEqual(buildRolePlayers(null, null), { detected: null, byRole: {} });
 });
 
 test("hasRanks", () => {

@@ -7,7 +7,7 @@
 
 import { parseEntriesInput, slugCandidates } from "./slugs.js";
 import { getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
-import { playerFromResult, encounterByName, windowLevels, detectRole, hasRanks } from "./transform.js";
+import { playerFromResult, encounterByName, windowLevels, rolesWithRuns, buildRolePlayers } from "./transform.js";
 import { summaryHTML } from "./render.js";
 import { embeddedCredentials } from "./config.js";
 
@@ -163,37 +163,50 @@ async function lookup() {
       round = next;
     }
 
-    // second pass: healers are judged on healing — refetch theirs with hps
-    const roles = new Map(); // full -> detected role (from the dps pass)
-    const healers = [];
-    for (const full of names) {
-      const role = detectRole(results.get(full) ?? null);
-      if (role) roles.set(full, role);
-      if (role === "healer") healers.push(full);
-    }
-    if (healers.length > 0) {
-      setStatus(`fetching healing rankings for ${healers.length} healer(s)…`);
-      const batch = healers.map((full) => ({
+    // second pass: every run is judged by the role it was played in, and
+    // healer runs are ranked on healing — fetch hps for any character with
+    // healer-spec runs (not just detected healer mains: a tank who also
+    // heals needs both sides)
+    const hpsResults = new Map(); // full -> hps result
+    const needHps = names.filter((full) => rolesWithRuns(results.get(full) ?? null).has("healer"));
+    if (needHps.length > 0) {
+      setStatus(`fetching healing rankings for ${needHps.length} character(s)…`);
+      const batch = needHps.map((full) => ({
         key: full, name: byFull.get(full).name,
         serverSlug: slugs.get(full), region: regions.get(full),
       }));
       for (let i = 0; i < batch.length; i += perRequest) {
         const fetched = await fetchCharacters(ctx, batch.slice(i, i + perRequest), zone.encounters, "hps");
-        for (const r of fetched) {
-          // keep dps numbers if the hps result is unexpectedly empty
-          if (hasRanks(r.result)) results.set(r.key, r.result);
-        }
+        for (const r of fetched) hpsResults.set(r.key, r.result);
       }
     }
 
-    const entries = names.map((full) => ({
-      fullName: full,
-      player: windowLevels(playerFromResult(results.get(full) ?? null, roles.get(full)), level, LEVEL_WINDOW),
-      slug: slugs.get(full),
-      region: regions.get(full),
-    }));
-    $("results").innerHTML = summaryHTML(entries, { level, encounter, encounters: zone.encounters });
-    wireRowToggles();
+    const entries = names.map((full) => {
+      const dpsResult = results.get(full) ?? null;
+      const { detected, byRole } = buildRolePlayers(dpsResult, hpsResults.get(full) ?? null);
+      const windowed = {};
+      for (const [role, p] of Object.entries(byRole)) {
+        windowed[role] = windowLevels(p, level, LEVEL_WINDOW);
+      }
+      // default view: the detected (current-main) role; if somehow absent,
+      // any role they do have runs in
+      const selected = windowed[detected]
+        ? detected
+        : ["healer", "tank", "dps"].find((r) => windowed[r]) ?? null;
+      return {
+        fullName: full,
+        detected, selected, byRole: windowed,
+        // no per-role runs at all: unfiltered fallback keeps the old
+        // "no M+ logs" / "no WCL character" rows working
+        player: selected
+          ? windowed[selected]
+          : windowLevels(playerFromResult(dpsResult, detected), level, LEVEL_WINDOW),
+        slug: slugs.get(full),
+        region: regions.get(full),
+      };
+    });
+    lastRender = { entries, level, encounter, encounters: zone.encounters };
+    renderResults();
 
     // make the current lookup shareable (same format the addon generates);
     // original tokens are kept so pasted URLs keep their region/realm
@@ -213,12 +226,45 @@ async function lookup() {
   }
 }
 
+// last successful lookup, kept so role-chip clicks can re-render without
+// refetching (all roles' tables are already built)
+let lastRender = null;
+
+function renderResults() {
+  if (!lastRender) return;
+  const open = new Set(
+    [...document.querySelectorAll("tr.detail-row.open")].map((r) => r.dataset.full),
+  );
+  $("results").innerHTML = summaryHTML(lastRender.entries, lastRender);
+  for (const row of document.querySelectorAll("tr.detail-row")) {
+    if (open.has(row.dataset.full)) row.classList.add("open");
+  }
+  wireRowToggles();
+  wireRoleChips();
+}
+
 function wireRowToggles() {
   for (const row of document.querySelectorAll("tr.row")) {
     row.addEventListener("click", (ev) => {
-      if (ev.target.closest("a")) return; // profile link, not a toggle
+      if (ev.target.closest("a, button")) return; // profile link / role chip
       const detail = document.querySelector(`tr.detail-row[data-idx="${row.dataset.idx}"]`);
       if (detail) detail.classList.toggle("open");
+    });
+  }
+}
+
+// clicking a dimmed role chip re-judges that player as that role (their
+// runs in it, ranked on the right metric); sort order stays put
+function wireRoleChips() {
+  for (const btn of document.querySelectorAll("button.role[data-role]")) {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const entry = lastRender?.entries.find((e) => e.fullName === btn.dataset.full);
+      const player = entry?.byRole?.[btn.dataset.role];
+      if (!player) return;
+      entry.selected = btn.dataset.role;
+      entry.player = player;
+      renderResults();
     });
   }
 }
