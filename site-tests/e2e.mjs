@@ -61,6 +61,9 @@ function characterResponse(query) {
   // raider.io URL — exact slug + region, no dropdown, no retries).
   const isHps = /metric: hps/.test(query);
   const day = 86_400_000;
+  // Switcher's top keys: AK's is Mistweaver (460 beats the Brewmasters),
+  // PIT's is Brewmaster (only run) — one top key per role, and the recency
+  // tie-break picks healer (all Mistweaver runs are fresh).
   const switcherRanks = isHps
     ? {
       // healing percentiles: the Mistweaver runs' real numbers, the
@@ -70,10 +73,11 @@ function characterResponse(query) {
         { historicalPercent: 6.0, rankPercent: 6.0, bracketData: 12, amount: 21, spec: "Brewmaster", score: 405, startTime: Date.now() - 95 * day },
         { historicalPercent: 7.0, rankPercent: 7.0, bracketData: 12, amount: 22, spec: "Brewmaster", score: 410, startTime: Date.now() - 90 * day },
         { historicalPercent: 90.0, rankPercent: 90.0, bracketData: 12, amount: 900, spec: "Mistweaver", score: 450, startTime: Date.now() - 20 * day },
+        { historicalPercent: 91.0, rankPercent: 91.0, bracketData: 12, amount: 905, spec: "Mistweaver", score: 460, startTime: Date.now() - 15 * day },
         { historicalPercent: 92.0, rankPercent: 92.0, bracketData: 12, amount: 910, spec: "Mistweaver", score: 455, startTime: Date.now() - 10 * day, report: { code: "HEALCODE1", fightID: 9 } },
       ] },
       [`e${PIT}`]: { ranks: [
-        { historicalPercent: 89.0, rankPercent: 89.0, bracketData: 13, amount: 950, spec: "Mistweaver", score: 470, startTime: Date.now() - 5 * day },
+        { historicalPercent: 4.0, rankPercent: 4.0, bracketData: 13, amount: 19, spec: "Brewmaster", score: 465, startTime: Date.now() - 85 * day },
       ] },
     }
     : {
@@ -84,10 +88,11 @@ function characterResponse(query) {
         { historicalPercent: 35.0, rankPercent: 35.0, bracketData: 12, amount: 310, spec: "Brewmaster", score: 405, startTime: Date.now() - 95 * day },
         { historicalPercent: 40.0, rankPercent: 40.0, bracketData: 12, amount: 320, spec: "Brewmaster", score: 410, startTime: Date.now() - 90 * day },
         { historicalPercent: 25.0, rankPercent: 25.0, bracketData: 12, amount: 100, spec: "Mistweaver", score: 450, startTime: Date.now() - 20 * day },
+        { historicalPercent: 24.0, rankPercent: 24.0, bracketData: 12, amount: 105, spec: "Mistweaver", score: 460, startTime: Date.now() - 15 * day },
         { historicalPercent: 22.0, rankPercent: 22.0, bracketData: 12, amount: 110, spec: "Mistweaver", score: 455, startTime: Date.now() - 10 * day },
       ] },
       [`e${PIT}`]: { ranks: [
-        { historicalPercent: 28.0, rankPercent: 28.0, bracketData: 13, amount: 120, spec: "Mistweaver", score: 470, startTime: Date.now() - 5 * day },
+        { historicalPercent: 38.0, rankPercent: 38.0, bracketData: 13, amount: 130, spec: "Brewmaster", score: 465, startTime: Date.now() - 85 * day },
       ] },
     };
   const out = {};
@@ -104,15 +109,16 @@ function characterResponse(query) {
     } else if (name === "Eurodude" && slug === "twisting-nether" && region === "us" && !isHps) {
       // same Name-Realm as the EU character but a DIFFERENT person in
       // another region — must get its own independent row/chips.
-      // Multi-role: the Brewmaster run is the top key (tank leads) even
-      // though the Windwalker run is more recent.
+      // Multi-role: one top key each (AK Brewmaster, PIT Windwalker);
+      // the fresher tank run wins the recency tie-break.
       out[alias] = {
         classID: 5,
         [`e${AK}`]: { ranks: [
-          { historicalPercent: 55.0, rankPercent: 55.0, bracketData: 12, amount: 500, spec: "Brewmaster", score: 420, startTime: Date.now() - 30 * day },
-          { historicalPercent: 45.0, rankPercent: 45.0, bracketData: 12, amount: 480, spec: "Windwalker", score: 400, startTime: Date.now() - 5 * day },
+          { historicalPercent: 55.0, rankPercent: 55.0, bracketData: 12, amount: 500, spec: "Brewmaster", score: 420, startTime: Date.now() - 5 * day },
         ] },
-        [`e${PIT}`]: { ranks: [] },
+        [`e${PIT}`]: { ranks: [
+          { historicalPercent: 45.0, rankPercent: 45.0, bracketData: 12, amount: 480, spec: "Windwalker", score: 400, startTime: Date.now() - 30 * day },
+        ] },
       };
     } else if (name === "Switcher" && slug === "area52") {
       out[alias] = { classID: 5, ...switcherRanks };
@@ -294,7 +300,7 @@ try {
       assert.equal(await page.locator("tr.row", { hasText: "Eurodude-TwistingNether" }).count(), 2);
       const usRow = page.locator('tr.row[data-key="Eurodude-TwistingNether@us"]');
       assert.match(await usRow.innerText(), /55b/, "US monk's tank Key % (its own data)");
-      assert.match(await usRow.innerHTML(), /role-tank sel/, "top key beats the newer dps run");
+      assert.match(await usRow.innerHTML(), /role-tank sel/, "1-1 top keys: fresher tank run wins the tie");
     });
 
     await check("chip click on a duplicate-name row targets THAT row only", async () => {
@@ -370,16 +376,16 @@ try {
     await check("role switcher: top-key holder leads, chips in top-key order", async () => {
       const row = page.locator("tr.row", { hasText: "Switcher-Area52" });
       const html = await row.innerHTML();
-      assert.match(html, /button[^>]*role-healer sel/, "H chip solid: holds both top keys");
+      assert.match(html, /button[^>]*role-healer sel/, "H chip solid: 1-1 top keys, fresher healer play wins");
       assert.match(html, /button[^>]*role-tank dim/, "T chip present but dimmed");
       assert.ok(html.indexOf("role-healer") < html.indexOf("role-tank"),
-        "H before T — ordered by top keys, not a fixed T/H/D order");
-      assert.match(html, /holds 2 of their 2 top keys/, "tooltip carries the count");
+        "H before T — ordered by top keys + recency, not a fixed T/H/D order");
+      assert.match(html, /holds 1 of their 2 top keys/, "tooltip carries the count");
       assert.doesNotMatch(html, /role-dps/, "never played dps -> no D chip");
       const text = await row.innerText();
       assert.match(text, /92b/, "healer runs shown with their hps Key %");
       assert.doesNotMatch(text, /40b/, "tank numbers not mixed in");
-      assert.doesNotMatch(text, /25b|22b/, "healer runs' dps percentiles never shown");
+      assert.doesNotMatch(text, /25b|24b|22b/, "healer runs' dps percentiles never shown");
     });
 
     await check("clicking the dimmed T chip re-judges the row as a tank", async () => {
