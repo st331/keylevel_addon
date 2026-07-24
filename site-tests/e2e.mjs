@@ -428,6 +428,27 @@ try {
       assert.match(foo, /@\+14 \(higher\)/);
     });
 
+    await check("repeat lookup within the hour is served from the cache", async () => {
+      const before = wcl.state.charQueries.length;
+      await page.evaluate(() => { document.querySelector("#status").textContent = ""; });
+      await page.click("#lookup");
+      await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("done"));
+      assert.equal(wcl.state.charQueries.length, before, "zero character queries — all cached");
+      assert.equal(await page.locator("tr.row").count(), 6, "every row renders from cache");
+      assert.match(await page.locator("tr.row", { hasText: "Priestess-Area52" }).innerText(), /88b/,
+        "the healer's hps side was cached too");
+      const box = await page.evaluate(() => JSON.parse(localStorage.getItem("kllCharCache")));
+      assert.ok(box && box.entries && Object.keys(box.entries).length >= 5, "cache persisted");
+    });
+
+    await check("Shift-click bypasses the cache for fresh data", async () => {
+      const before = wcl.state.charQueries.length;
+      await page.evaluate(() => { document.querySelector("#status").textContent = ""; });
+      await page.click("#lookup", { modifiers: ["Shift"] });
+      await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("done"));
+      assert.ok(wcl.state.charQueries.length > before, "characters re-fetched from the API");
+    });
+
     await check("token fetched once and cached", async () => {
       assert.equal(wcl.state.tokenRequests, 1);
     });
