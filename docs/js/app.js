@@ -10,6 +10,7 @@ import { getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError, DE
 import { playerFromResult, encounterByName, windowLevels, rolesWithRuns, buildRolePlayers, pickSelectedRole } from "./transform.js";
 import { summaryHTML } from "./render.js";
 import { embeddedCredentials } from "./config.js";
+import { cacheKey, pruneCache, slimResult } from "./cache.js";
 
 const LEVEL_WINDOW = 4; // only key levels within ±4 of the target matter
 
@@ -25,10 +26,29 @@ const LS = {
   token: "kllToken",
   tokenExpires: "kllTokenExpires",
   zoneCache: "kllZoneCache",
+  charCache: "kllCharCache",
   region: "kllRegion",
   tokenUrl: "kllTokenUrl",
   apiUrl: "kllApiUrl",
 };
+
+// ------------------------------------------------- per-character cache
+
+const CHAR_CACHE_VERSION = 1;
+
+function loadCharCache() {
+  try {
+    const box = JSON.parse(localStorage.getItem(LS.charCache) || "null");
+    if (box?.v === CHAR_CACHE_VERSION && box.entries) return box.entries;
+  } catch { /* corrupted: start over */ }
+  return {};
+}
+
+function saveCharCache(entries) {
+  try {
+    localStorage.setItem(LS.charCache, JSON.stringify({ v: CHAR_CACHE_VERSION, entries }));
+  } catch { /* quota full — the cache is just an optimization */ }
+}
 
 const endpoints = () => ({
   tokenUrl: localStorage.getItem(LS.tokenUrl) || DEFAULT_TOKEN_URL,
@@ -96,7 +116,9 @@ function populateDungeonSelect(encounters, selected) {
 
 // ---------------------------------------------------------------- lookup
 
-async function lookup() {
+async function lookup(ev) {
+  // Shift-click (or Ctrl+Shift+Enter) skips the hour cache for fresh data
+  const skipCache = Boolean(ev?.shiftKey);
   const dropdownRegion = $("region").value;
   // a typed name and a pasted URL can be the same character — collapse them
   // now that the default region is known
@@ -133,23 +155,39 @@ async function lookup() {
     const encounter = encounterByName(zone.encounters, $("dungeon").value) ?? null;
 
     // characters: URLs carry an exact slug + region; typed names guess the
-    // slug (with retries) and use the dropdown region
+    // slug (with retries) and use the dropdown region. Anyone looked up in
+    // the last hour (this season) is served from the browser cache.
     const ctx = { token, ...endpoints() };
-    const results = new Map(); // key -> result|null
-    const slugs = new Map();   // key -> slug that resolved (or best guess)
-    const regions = new Map(); // key -> region actually used
-    let round = parsed.map((c) => {
+    const results = new Map();    // key -> result|null
+    const slugs = new Map();      // key -> slug that resolved (or best guess)
+    const regions = new Map();    // key -> region actually used
+    const hpsResults = new Map(); // key -> hps result
+    const now = Date.now();
+    const cache = pruneCache(loadCharCache(), now);
+    const fetchedKeys = [];
+    let cachedCount = 0;
+    let round = [];
+    for (const c of parsed) {
       const reg = c.region ?? dropdownRegion;
       const k = keyOf(c);
       regions.set(k, reg);
+      const hit = skipCache ? undefined : cache[cacheKey(zone.id, c.full, reg)];
+      if (hit) {
+        cachedCount++;
+        results.set(k, hit.dps ?? null);
+        slugs.set(k, hit.slug);
+        if (hit.hps != null) hpsResults.set(k, hit.hps);
+        continue;
+      }
+      fetchedKeys.push(k);
       const candidates = c.slug ? [c.slug] : slugCandidates(c.realm);
       slugs.set(k, candidates[0]);
-      return { key: k, name: c.name, candidates, tried: 0, region: reg };
-    });
+      round.push({ key: k, name: c.name, candidates, tried: 0, region: reg });
+    }
     const perRequest = Math.max(1, Math.floor(16 / Math.max(1, zone.encounters.length)));
     while (round.length > 0) {
       const batch = round.map((c) => ({ ...c, serverSlug: c.candidates[c.tried] }));
-      setStatus(`looking up ${batch.length} character(s)…`);
+      setStatus(`looking up ${batch.length} character(s)…${cachedCount ? ` (${cachedCount} cached)` : ""}`);
       const fetched = [];
       for (let i = 0; i < batch.length; i += perRequest) {
         fetched.push(...await fetchCharacters(ctx, batch.slice(i, i + perRequest), zone.encounters));
@@ -171,9 +209,9 @@ async function lookup() {
     // second pass: every run is judged by the role it was played in, and
     // healer runs are ranked on healing — fetch hps for any character with
     // healer-spec runs (not just detected healer mains: a tank who also
-    // heals needs both sides)
-    const hpsResults = new Map(); // key -> hps result
-    const needHps = [...byKey.keys()].filter((k) => rolesWithRuns(results.get(k) ?? null).has("healer"));
+    // heals needs both sides). Cache hits already carry their hps side.
+    const needHps = [...byKey.keys()].filter((k) =>
+      !hpsResults.has(k) && rolesWithRuns(results.get(k) ?? null).has("healer"));
     if (needHps.length > 0) {
       setStatus(`fetching healing rankings for ${needHps.length} character(s)…`);
       const batch = needHps.map((k) => ({
@@ -184,6 +222,22 @@ async function lookup() {
         const fetched = await fetchCharacters(ctx, batch.slice(i, i + perRequest), zone.encounters, "hps");
         for (const r of fetched) hpsResults.set(r.key, r.result);
       }
+    }
+
+    // remember what we just fetched: an hour per character, this season
+    if (fetchedKeys.length > 0) {
+      const fetched = new Set(fetchedKeys);
+      for (const c of parsed) {
+        const k = keyOf(c);
+        if (!fetched.has(k)) continue;
+        cache[cacheKey(zone.id, c.full, regions.get(k))] = {
+          t: now,
+          slug: slugs.get(k),
+          dps: slimResult(results.get(k) ?? null),
+          ...(hpsResults.has(k) && { hps: slimResult(hpsResults.get(k)) }),
+        };
+      }
+      saveCharCache(pruneCache(cache, now));
     }
 
     const entries = parsed.map((c) => {
@@ -325,7 +379,7 @@ async function prefetchDungeons() {
 export function init() {
   $("lookup").addEventListener("click", lookup);
   $("names").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) lookup();
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) lookup(e);
   });
 
   const hasChars = initFromParams();
