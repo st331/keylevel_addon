@@ -65,7 +65,12 @@ button{
 }
 button:hover{ filter:brightness(1.08) }
 button:disabled{ opacity:.45; cursor:wait }
-#lookup{ align-self:flex-start }
+.actions{ display:flex; gap:10px; align-items:center }
+button.ghost{
+  background:transparent; color:var(--muted); font-weight:400;
+  border:1px solid var(--grid); padding:.5rem 1rem;
+}
+button.ghost:hover{ color:var(--ink); border-color:var(--muted); filter:none }
 
 /* ---------------- status ---------------- */
 .status{ min-height:24px; color:var(--muted); font-size:.85rem; margin:14px 2px }

@@ -449,6 +449,16 @@ try {
       assert.ok(wcl.state.charQueries.length > before, "characters re-fetched from the API");
     });
 
+    await check("the ⟳ Fresh data button also bypasses the cache", async () => {
+      const before = wcl.state.charQueries.length;
+      await page.evaluate(() => { document.querySelector("#status").textContent = ""; });
+      await page.click("#refresh");
+      await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("done"));
+      assert.ok(wcl.state.charQueries.length > before, "works without a keyboard (touch devices)");
+      assert.match(await page.locator("tr.row", { hasText: "Foo-Area52" }).innerText(), /99b/,
+        "results re-render after the refresh");
+    });
+
     await check("token fetched once and cached", async () => {
       assert.equal(wcl.state.tokenRequests, 1);
     });

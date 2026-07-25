@@ -34,7 +34,8 @@ const LS = {
 
 // ------------------------------------------------- per-character cache
 
-const CHAR_CACHE_VERSION = 1;
+// bumping this discards every previously stored cache on the next visit
+const CHAR_CACHE_VERSION = 2;
 
 function loadCharCache() {
   try {
@@ -135,6 +136,7 @@ async function lookup(ev) {
   const byKey = new Map(parsed.map((e) => [keyOf(e), e]));
 
   $("lookup").disabled = true;
+  $("refresh").disabled = true;
   try {
     setStatus("authenticating…");
     let token = await ensureToken();
@@ -282,6 +284,7 @@ async function lookup(ev) {
     else { setStatus("unexpected error: " + e.message, true); throw e; }
   } finally {
     $("lookup").disabled = false;
+    $("refresh").disabled = false;
   }
 }
 
@@ -378,6 +381,9 @@ async function prefetchDungeons() {
 
 export function init() {
   $("lookup").addEventListener("click", lookup);
+  // an explicit fresh-data control: Shift-click doesn't exist on touch
+  // devices, and share-link visits auto-run before you could hold Shift
+  $("refresh").addEventListener("click", () => lookup({ shiftKey: true }));
   $("names").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) lookup(e);
   });
