@@ -6,7 +6,7 @@
 // notice instead of a setup flow.
 
 import { parseEntriesInput, dedupeEntries, slugCandidates } from "./slugs.js";
-import { getToken, listZones, guessMythicPlusZone, fetchCharacters, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
+import { getToken, listZones, guessMythicPlusZone, fetchCharactersParallel, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
 import { playerFromResult, encounterByName, windowLevels, rolesWithRuns, buildRolePlayers, pickSelectedRole } from "./transform.js";
 import { summaryHTML } from "./render.js";
 import { embeddedCredentials } from "./config.js";
@@ -190,10 +190,8 @@ async function lookup(ev) {
     while (round.length > 0) {
       const batch = round.map((c) => ({ ...c, serverSlug: c.candidates[c.tried] }));
       setStatus(`looking up ${batch.length} character(s)…${cachedCount ? ` (${cachedCount} cached)` : ""}`);
-      const fetched = [];
-      for (let i = 0; i < batch.length; i += perRequest) {
-        fetched.push(...await fetchCharacters(ctx, batch.slice(i, i + perRequest), zone.encounters));
-      }
+      // all requests for this round go out together
+      const fetched = await fetchCharactersParallel(ctx, batch, zone.encounters, undefined, perRequest);
       const next = [];
       for (const r of fetched) {
         if (r.result) {
@@ -220,10 +218,8 @@ async function lookup(ev) {
         key: k, name: byKey.get(k).name,
         serverSlug: slugs.get(k), region: regions.get(k),
       }));
-      for (let i = 0; i < batch.length; i += perRequest) {
-        const fetched = await fetchCharacters(ctx, batch.slice(i, i + perRequest), zone.encounters, "hps");
-        for (const r of fetched) hpsResults.set(r.key, r.result);
-      }
+      const fetched = await fetchCharactersParallel(ctx, batch, zone.encounters, "hps", perRequest);
+      for (const r of fetched) hpsResults.set(r.key, r.result);
     }
 
     // remember what we just fetched: an hour per character, this season
