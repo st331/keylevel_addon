@@ -115,3 +115,18 @@ export async function fetchCharacters(ctx, chars, encounters, metric) {
   const cd = data?.characterData ?? {};
   return chars.map((c, i) => ({ ...c, result: cd[`c${i}`] ?? null }));
 }
+
+// Split a big roster into perRequest-sized queries and fire them ALL at
+// once — 20 applicants should cost about one round-trip of wall time,
+// not ten sequential ones. Chunk order (and therefore character order)
+// is preserved in the merged result.
+export async function fetchCharactersParallel(ctx, chars, encounters, metric, perRequest) {
+  const chunks = [];
+  for (let i = 0; i < chars.length; i += perRequest) {
+    chunks.push(chars.slice(i, i + perRequest));
+  }
+  const fetched = await Promise.all(
+    chunks.map((chunk) => fetchCharacters(ctx, chunk, encounters, metric)),
+  );
+  return fetched.flat();
+}

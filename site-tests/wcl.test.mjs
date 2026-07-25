@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getToken, gql, buildCharacterQuery, fetchCharacters, guessMythicPlusZone, WclError } from "../docs/js/wcl.js";
+import { getToken, gql, buildCharacterQuery, fetchCharacters, fetchCharactersParallel, guessMythicPlusZone, WclError } from "../docs/js/wcl.js";
 
 function fakeFetch(handler) {
   const calls = [];
@@ -68,6 +68,28 @@ test("fetchCharacters maps aliases back; unknown character -> null", async () =>
   );
   assert.equal(out[0].result.classID, 4);
   assert.equal(out[1].result, null);
+});
+
+test("fetchCharactersParallel: all chunks in flight at once, order preserved", async () => {
+  let inFlight = 0, maxInFlight = 0;
+  const classFor = { A: 1, B: 2, C: 3, D: 4, E: 5 };
+  const fetchImpl = async (url, opts) => {
+    const name = /name: "([^"]+)"/.exec(JSON.parse(opts.body).query)[1];
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise((r) => setTimeout(r, 15)); // hold the request open
+    inFlight--;
+    return {
+      ok: true, status: 200,
+      json: async () => ({ data: { characterData: { c0: { classID: classFor[name] } } } }),
+    };
+  };
+  const chars = Object.keys(classFor).map((n) => ({ key: n, name: n, serverSlug: "s", region: "us" }));
+  const out = await fetchCharactersParallel({ token: "t", fetchImpl }, chars, [{ id: 1 }], undefined, 1);
+  assert.equal(maxInFlight, 5, "no request waits for another — 20 characters ≈ one round-trip");
+  assert.deepEqual(out.map((r) => r.key), ["A", "B", "C", "D", "E"], "merged in roster order");
+  assert.equal(out[2].result.classID, 3, "results map back to the right character");
+  assert.deepEqual(await fetchCharactersParallel({ token: "t", fetchImpl }, [], [{ id: 1 }], undefined, 2), []);
 });
 
 test("guessMythicPlusZone picks live keystone zone, skipping PTR", () => {
