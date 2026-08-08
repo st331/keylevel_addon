@@ -210,6 +210,12 @@ test("formatAmount is compact and never reads '1000k'", () => {
   assert.equal(formatAmount(12_400_000), "12.4M");
   assert.equal(formatAmount(1_500_000_000), "1.5B");
   assert.equal(formatAmount(0), null, "no run, no number");
+  assert.equal(formatAmount(0.4), null, "sub-1 never renders as a bare '0'");
+  assert.equal(formatAmount(-5), null);
+  assert.equal(formatAmount(Infinity), null);
+  assert.equal(formatAmount(999_499), "999k", "just under the unit boundary");
+  assert.equal(formatAmount(999_499_999), "999M");
+  assert.equal(formatAmount(999_500_000), "1B");
   assert.equal(formatAmount(undefined), null);
   assert.equal(formatAmount(NaN), null);
   assert.equal(formatAmount("120"), null, "strings are not amounts");
@@ -247,6 +253,19 @@ test("detailMatrixHTML shows each run's throughput under its percentile", () => 
   assert.match(hHtml, /<span class="amt" title="HPS">640k<\/span>/);
   assert.match(hHtml, /under it = HPS on that run/);
   assert.doesNotMatch(hHtml, /DPS/, "a healing table never says DPS");
+});
+
+test("stats rows summarize throughput only when every dungeon has one", () => {
+  // one dungeon at +12 carries an amount, the other doesn't: the percentile
+  // average covers both, so an amount "average" over just one would lie
+  const p = playerFromResult({
+    classID: 4,
+    [`e${AK}`]: { ranks: [{ historicalPercent: 90, bracketData: 12, amount: 1_000_000, spec: "Fire" }] },
+    [`e${COT}`]: { ranks: [{ historicalPercent: 50, bracketData: 12, spec: "Fire" }] },
+  });
+  const stats = detailMatrixHTML(p, ENCOUNTERS, 12).slice(detailMatrixHTML(p, ENCOUNTERS, 12).indexOf("Average"));
+  assert.match(stats, /70%/, "percentiles still averaged across both dungeons");
+  assert.doesNotMatch(stats, /1M/, "no partial-population throughput average");
 });
 
 test("detailMatrixHTML tolerates runs with no amount", () => {

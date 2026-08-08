@@ -32,7 +32,9 @@ function muted(text) {
 // Raw throughput, compactly: 1.25M / 21.1k / 845. The unit thresholds sit
 // just under the round number so 999,999 reads "1M", not "1000k".
 export function formatAmount(n) {
-  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return null;
+  // sub-1 throughput isn't a real run; rendering it as "0" under a
+  // percentile just looks broken
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 1) return null;
   for (const [size, suffix, min] of [[1e9, "B", 999_500_000], [1e6, "M", 999_500], [1e3, "k", 999.5]]) {
     if (n < min) continue;
     const v = n / size;
@@ -210,7 +212,10 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
       const dungeons = Object.values(levels[l]?.dungeons ?? {});
       const v = fn(dungeons.map((d) => d.pct));
       const amounts = dungeons.map((d) => d.amount).filter((a) => typeof a === "number");
-      const a = amounts.length ? fn(amounts) : null;
+      // only summarize throughput when EVERY dungeon at this level has one:
+      // an average over a subset, sat under an average over all of them,
+      // reads as the same population and would quietly mislead
+      const a = amounts.length === dungeons.length ? fn(amounts) : null;
       const cell = v === null ? "" : `${pctSpan(Math.round(v))}${a === null ? "" : amountHTML(a, `${label.toLowerCase()} ${metric}`)}`;
       row += `<td class="${l === targetLevel ? "target-level" : ""}">${cell}</td>`;
     }
