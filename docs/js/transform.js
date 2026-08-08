@@ -133,12 +133,14 @@ export function pickPercent(rank) {
   return typeof pct === "number" ? pct : null;
 }
 
-// Collapse one dungeon's ranks into { [keyLevel]: { pct, spec, pcts } }:
-// pct/spec from the best run at that level, pcts = every run's percentile
-// (so best/average/median can be shown). The API sometimes lists the same
-// run twice (identical amount at the same level) — those are deduped so
-// they don't skew averages. filterRole keeps only runs played in that role
-// (a run is judged by the job its spec was doing, not the player's main).
+// Collapse one dungeon's ranks into { [keyLevel]: { pct, spec, amount, pcts } }:
+// pct/spec/amount from the best run at that level, pcts = every run's
+// percentile (so best/average/median can be shown). amount is the raw
+// throughput of that run — dps, or hps when the blob came from healing
+// rankings — which the percentile alone hides. The API sometimes lists the
+// same run twice (identical amount at the same level) — those are deduped
+// so they don't skew averages. filterRole keeps only runs played in that
+// role (a run is judged by the job its spec was doing, not the player's main).
 export function bestPerLevel(blob, filterRole) {
   const out = {};
   const seen = new Set();
@@ -159,10 +161,15 @@ export function bestPerLevel(blob, filterRole) {
     if (p > e.pct) {
       e.pct = p;
       e.spec = rank.spec || rank.bestSpec || undefined;
+      if (typeof rank.amount === "number") e.amount = rank.amount;
+      else delete e.amount; // a later, better run without one must not inherit
       if (typeof rank.startTime === "number") e.when = rank.startTime; // ms
+      else delete e.when;
       // provenance: link the best run to its exact report fight
       if (rank.report?.code) {
         e.report = { code: rank.report.code, fightID: rank.report.fightID };
+      } else {
+        delete e.report;
       }
     }
   }

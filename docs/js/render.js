@@ -29,6 +29,33 @@ function muted(text) {
   return `<span class="muted">${esc(text)}</span>`;
 }
 
+// Raw throughput, compactly: 1.25M / 21.1k / 845. The unit thresholds sit
+// just under the round number so 999,999 reads "1M", not "1000k".
+export function formatAmount(n) {
+  // sub-1 throughput isn't a real run; rendering it as "0" under a
+  // percentile just looks broken
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 1) return null;
+  for (const [size, suffix, min] of [[1e9, "B", 999_500_000], [1e6, "M", 999_500], [1e3, "k", 999.5]]) {
+    if (n < min) continue;
+    const v = n / size;
+    const shown = v >= 100 ? Math.round(v) : v >= 10 ? Math.round(v * 10) / 10 : Math.round(v * 100) / 100;
+    return `${shown}${suffix}`;
+  }
+  return String(Math.round(n));
+}
+
+// What the raw numbers in a table mean. Healer tables are built from
+// healing rankings, so their amounts are HPS, not DPS.
+export function metricLabel(player) {
+  return player?.metric === "hps" ? "HPS" : "DPS";
+}
+
+// The throughput line under a percentile.
+export function amountHTML(amount, label) {
+  const text = formatAmount(amount);
+  return text ? `<span class="amt" title="${esc(label)}">${text}</span>` : "";
+}
+
 // "today" / "6d" / "3mo" — how long ago a run happened (whenMs from the API).
 export function ageText(whenMs, nowMs = Date.now()) {
   if (typeof whenMs !== "number" || whenMs <= 0) return null;
@@ -144,6 +171,7 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
   // keyed off the metric, not the role, so a fallback table of dps-metric
   // numbers never mislabels its links
   const reportTab = player.metric === "hps" ? "healing" : "damage-done";
+  const metric = metricLabel(player);
 
   let body = "";
   for (const e of encounters) {
@@ -154,13 +182,19 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
       if (d) {
         any = true;
         // each percentile links to the exact report fight it came from;
-        // hover shows when the run happened (percentile is frozen to that day)
+        // the throughput of that same run sits under it (the percentile
+        // says how they ranked, the amount says what they actually did)
         const when = d.when ? new Date(d.when).toISOString().slice(0, 10) : null;
-        const title = when ? `run on ${when} — open its report` : "open this run's report";
+        const amountText = formatAmount(d.amount);
+        const parts = [
+          when ? `run on ${when}` : null,
+          amountText ? `${amountText} ${metric}` : null,
+        ].filter(Boolean);
+        const inner = `${pctSpan(d.pct)}${amountHTML(d.amount, metric)}`;
         const cell = d.report?.code
-          ? `<a class="runlink" target="_blank" rel="noopener" title="${title}"
-               href="https://www.warcraftlogs.com/reports/${encodeURIComponent(d.report.code)}?fight=${Number(d.report.fightID) || 1}&type=${reportTab}">${pctSpan(d.pct)}</a>`
-          : `<span${when ? ` title="run on ${when}"` : ""}>${pctSpan(d.pct)}</span>`;
+          ? `<a class="runlink" target="_blank" rel="noopener" title="${esc([...parts, "open its report"].join(" — "))}"
+               href="https://www.warcraftlogs.com/reports/${encodeURIComponent(d.report.code)}?fight=${Number(d.report.fightID) || 1}&type=${reportTab}">${inner}</a>`
+          : `<span${parts.length ? ` title="${esc(parts.join(" — "))}"` : ""}>${inner}</span>`;
         row += `<td class="${l === targetLevel ? "target-level" : ""}">${cell}</td>`;
       } else {
         row += `<td class="${l === targetLevel ? "target-level" : ""}"><span class="muted">·</span></td>`;
@@ -171,20 +205,27 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
   }
   if (!body) return `<div class="muted detail-empty">No Mythic+ logs in this range.</div>`;
 
-  // per-level stats across dungeons
+  // per-level stats across dungeons, same two-line shape as the cells
   const statsRow = (label, fn) => {
     let row = `<tr class="stats"><td class="dungeon-col">${label}</td>`;
     for (const l of levelNums) {
-      const pcts = Object.values(levels[l]?.dungeons ?? {}).map((d) => d.pct);
-      const v = fn(pcts);
-      row += `<td class="${l === targetLevel ? "target-level" : ""}">${v === null ? "" : pctSpan(Math.round(v))}</td>`;
+      const dungeons = Object.values(levels[l]?.dungeons ?? {});
+      const v = fn(dungeons.map((d) => d.pct));
+      const amounts = dungeons.map((d) => d.amount).filter((a) => typeof a === "number");
+      // only summarize throughput when EVERY dungeon at this level has one:
+      // an average over a subset, sat under an average over all of them,
+      // reads as the same population and would quietly mislead
+      const a = amounts.length === dungeons.length ? fn(amounts) : null;
+      const cell = v === null ? "" : `${pctSpan(Math.round(v))}${a === null ? "" : amountHTML(a, `${label.toLowerCase()} ${metric}`)}`;
+      row += `<td class="${l === targetLevel ? "target-level" : ""}">${cell}</td>`;
     }
     return row + `</tr>`;
   };
   body += statsRow("Average", average);
   body += statsRow("Median", median);
 
-  return `<table class="detail">${head}${body}</table>`;
+  const note = `<div class="matrix-note">Top number = Key % (rank at that key level) · under it = ${metric} on that run</div>`;
+  return `<table class="detail">${head}${body}</table>${note}`;
 }
 
 // The main summary table.
