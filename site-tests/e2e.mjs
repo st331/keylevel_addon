@@ -72,9 +72,9 @@ function characterResponse(query) {
         { historicalPercent: 5.0, rankPercent: 5.0, bracketData: 12, amount: 20, spec: "Brewmaster", score: 400, startTime: Date.now() - 100 * day },
         { historicalPercent: 6.0, rankPercent: 6.0, bracketData: 12, amount: 21, spec: "Brewmaster", score: 405, startTime: Date.now() - 95 * day },
         { historicalPercent: 7.0, rankPercent: 7.0, bracketData: 12, amount: 22, spec: "Brewmaster", score: 410, startTime: Date.now() - 90 * day },
-        { historicalPercent: 90.0, rankPercent: 90.0, bracketData: 12, amount: 900, spec: "Mistweaver", score: 450, startTime: Date.now() - 20 * day },
-        { historicalPercent: 91.0, rankPercent: 91.0, bracketData: 12, amount: 905, spec: "Mistweaver", score: 460, startTime: Date.now() - 15 * day },
-        { historicalPercent: 92.0, rankPercent: 92.0, bracketData: 12, amount: 910, spec: "Mistweaver", score: 455, startTime: Date.now() - 10 * day, report: { code: "HEALCODE1", fightID: 9 } },
+        { historicalPercent: 90.0, rankPercent: 90.0, bracketData: 12, amount: 620_000, spec: "Mistweaver", score: 450, startTime: Date.now() - 20 * day },
+        { historicalPercent: 91.0, rankPercent: 91.0, bracketData: 12, amount: 630_000, spec: "Mistweaver", score: 460, startTime: Date.now() - 15 * day },
+        { historicalPercent: 92.0, rankPercent: 92.0, bracketData: 12, amount: 640_000, spec: "Mistweaver", score: 455, startTime: Date.now() - 10 * day, report: { code: "HEALCODE1", fightID: 9 } },
       ] },
       [`e${PIT}`]: { ranks: [
         { historicalPercent: 4.0, rankPercent: 4.0, bracketData: 13, amount: 19, spec: "Brewmaster", score: 465, startTime: Date.now() - 85 * day },
@@ -134,16 +134,18 @@ function characterResponse(query) {
     } else if (name === "Foo" && slug === "area52" && !isHps) {
       // realistic shape: the site must show the HISTORICAL (at-the-time)
       // Key %, not today's drifted value; plus an API-duplicated run
+      // amounts are realistic dps so the detail matrix's throughput line
+      // exercises real formatting (1.25M / 990k), not toy integers
       out[alias] = {
         classID: 4,
         [`e${AK}`]: { ranks: [
-          { historicalPercent: 91.2, rankPercent: 91.2, todayPercent: 85.0, bracketData: 12, amount: 100, spec: "Fire", startTime: Date.now() - 90 * 86_400_000, report: { code: "TESTCODE1", fightID: 7 } },
-          { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 90, spec: "Fire" }, // second +12 run
-          { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 90, spec: "Fire" }, // duplicate: must not skew avg
-          { historicalPercent: 76.4, rankPercent: 76.4, todayPercent: 70.0, bracketData: 11, amount: 80, spec: "Fire" },
-          { historicalPercent: 50.0, rankPercent: 50.0, todayPercent: 45.0, bracketData: 2, amount: 70, spec: "Fire" }, // outside the ±4 window at +12
+          { historicalPercent: 91.2, rankPercent: 91.2, todayPercent: 85.0, bracketData: 12, amount: 1_250_000, spec: "Fire", startTime: Date.now() - 90 * 86_400_000, report: { code: "TESTCODE1", fightID: 7 } },
+          { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 900_000, spec: "Fire" }, // second +12 run
+          { historicalPercent: 60.0, rankPercent: 60.0, todayPercent: 52.0, bracketData: 12, amount: 900_000, spec: "Fire" }, // duplicate: must not skew avg
+          { historicalPercent: 76.4, rankPercent: 76.4, todayPercent: 70.0, bracketData: 11, amount: 800_000, spec: "Fire" },
+          { historicalPercent: 50.0, rankPercent: 50.0, todayPercent: 45.0, bracketData: 2, amount: 700_000, spec: "Fire" }, // outside the ±4 window at +12
         ] },
-        [`e${PIT}`]: { ranks: [{ historicalPercent: 99.4, rankPercent: 99.4, todayPercent: 97.0, bracketData: 14, amount: 120, spec: "Fire" }] },
+        [`e${PIT}`]: { ranks: [{ historicalPercent: 99.4, rankPercent: 99.4, todayPercent: 97.0, bracketData: 14, amount: 990_000, spec: "Fire" }] },
       };
     } else {
       out[alias] = null;
@@ -349,6 +351,15 @@ try {
       assert.equal(href, "https://www.warcraftlogs.com/reports/TESTCODE1?fight=7&type=damage-done");
     });
 
+    await check("matrix shows each run's actual DPS under its Key %", async () => {
+      const text = await page.locator("tr.detail-row.open").innerText();
+      assert.match(text, /1\.25M/, "the +12 Ara-Kara run's dps");
+      assert.match(text, /990k/, "the +14 Pit run's dps");
+      assert.match(text, /under it = DPS on that run/i, "legend explains the second number");
+      const tip = await page.locator("tr.detail-row.open a.runlink").first().getAttribute("title");
+      assert.match(tip, /1\.25M DPS/, "tooltip names the metric");
+    });
+
     await check("matrix hides keys outside the ±4 window and shows avg/median", async () => {
       const text = await page.locator("tr.detail-row.open").innerText();
       assert.doesNotMatch(text, /\+2\b/, "the +2 log is outside +8..+16");
@@ -413,9 +424,13 @@ try {
     await check("healer detail matrix links to the healing tab", async () => {
       await page.locator("tr.row", { hasText: "Switcher-Area52" }).locator("button.role.dim").click(); // back to H
       await page.locator("tr.row", { hasText: "Switcher-Area52" }).click(); // open detail
-      const href = await page
-        .locator('tr.detail-row[data-key="Switcher-Area52@us"] a.runlink').first().getAttribute("href");
+      const detail = page.locator('tr.detail-row[data-key="Switcher-Area52@us"]');
+      const href = await detail.locator("a.runlink").first().getAttribute("href");
       assert.equal(href, "https://www.warcraftlogs.com/reports/HEALCODE1?fight=9&type=healing");
+      const text = await detail.innerText();
+      assert.match(text, /640k/, "the healer's throughput is their HPS");
+      assert.match(text, /under it = HPS on that run/i, "legend says HPS, not DPS");
+      assert.doesNotMatch(text, /DPS/, "a healing table never mentions DPS");
     });
 
     await check("higher-level run counts for the dungeon column", async () => {

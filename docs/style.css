@@ -105,6 +105,13 @@ button.role{ font-family:inherit; background:transparent; cursor:pointer; margin
 button.role.dim{ opacity:.35 }
 button.role.dim:hover{ opacity:.85 }
 button.role.sel{ border-color:currentColor }
+/* raw throughput under each percentile in the detail matrix */
+.amt{
+  display:block; font-size:.66rem; color:var(--muted);
+  letter-spacing:.02em; margin-top:2px; font-variant-numeric:tabular-nums;
+}
+a.runlink:hover .amt{ color:var(--ink) }
+.matrix-note{ font-size:.7rem; color:var(--muted); margin:8px 2px 2px }
 .wcl-link{
   font-size:.78rem; opacity:.55; padding:0 .15rem;
 }

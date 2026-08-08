@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { esc, pctSpan, pctTag, bamHTML, ageText, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML, roleChipsHTML } from "../docs/js/render.js";
+import { esc, pctSpan, pctTag, bamHTML, ageText, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML, roleChipsHTML, formatAmount, metricLabel } from "../docs/js/render.js";
 import { playerFromResult, buildRolePlayers } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669;
@@ -83,7 +83,7 @@ test("matrix cells carry the run date in the tooltip", () => {
     [`e${AK}`]: { ranks: [{ historicalPercent: 91.2, bracketData: 12, amount: 100, startTime: Date.UTC(2026, 5, 6), report: { code: "C0DE", fightID: 1 } }] },
   });
   const html = detailMatrixHTML(p, ENCOUNTERS, 12);
-  assert.match(html, /title="run on 2026-06-06 — open its report"/);
+  assert.match(html, /title="run on 2026-06-06 — 100 DPS — open its report"/);
 });
 
 test("dungeonCellHTML shows run consistency via b/a/m", () => {
@@ -199,6 +199,64 @@ test("summaryHTML keeps same-name characters from different regions distinct", (
   const html = summaryHTML(entries, { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS });
   assert.match(html, /data-key="Twin-Realm@us"/, "each row keyed by full@region");
   assert.match(html, /data-key="Twin-Realm@eu"/);
+});
+
+test("formatAmount is compact and never reads '1000k'", () => {
+  assert.equal(formatAmount(845), "845");
+  assert.equal(formatAmount(21053.914), "21.1k");
+  assert.equal(formatAmount(850_000), "850k");
+  assert.equal(formatAmount(999_999), "1M", "rounds up a unit instead of 1000k");
+  assert.equal(formatAmount(1_250_000), "1.25M");
+  assert.equal(formatAmount(12_400_000), "12.4M");
+  assert.equal(formatAmount(1_500_000_000), "1.5B");
+  assert.equal(formatAmount(0), null, "no run, no number");
+  assert.equal(formatAmount(undefined), null);
+  assert.equal(formatAmount(NaN), null);
+  assert.equal(formatAmount("120"), null, "strings are not amounts");
+});
+
+test("metricLabel follows the table's metric, not its role", () => {
+  assert.equal(metricLabel({ metric: "hps", role: "healer" }), "HPS");
+  assert.equal(metricLabel({ metric: "dps", role: "tank" }), "DPS");
+  assert.equal(metricLabel({ role: "healer" }), "DPS", "unlabeled fallback table is dps data");
+  assert.equal(metricLabel(null), "DPS");
+});
+
+test("detailMatrixHTML shows each run's throughput under its percentile", () => {
+  const p = playerFromResult({
+    classID: 4,
+    [`e${AK}`]: { ranks: [{ historicalPercent: 91.2, bracketData: 12, amount: 1_250_000, spec: "Fire", startTime: Date.UTC(2026, 5, 6), report: { code: "C0DE", fightID: 3 } }] },
+    [`e${COT}`]: { ranks: [{ historicalPercent: 71.0, bracketData: 12, amount: 990_000, spec: "Fire" }] },
+  });
+  const html = detailMatrixHTML(p, ENCOUNTERS, 12);
+  assert.match(html, /91%<\/span><span class="amt" title="DPS">1\.25M<\/span>/, "amount sits under the pct");
+  assert.match(html, />990k</, "the second dungeon's dps too");
+  assert.match(html, /title="run on 2026-06-06 — 1\.25M DPS — open its report"/, "tooltip names the metric");
+  assert.match(html, /Top number = Key % .* under it = DPS on that run/, "legend under the matrix");
+  // stats rows average the throughput the same way they average percentiles
+  const stats = html.slice(html.indexOf("Average"));
+  assert.match(stats, />1\.12M</, "average of 1.25M and 990k");
+
+  // healer tables are HPS end to end
+  const healer = playerFromResult({
+    classID: 5,
+    [`e${AK}`]: { ranks: [{ historicalPercent: 88.0, bracketData: 12, amount: 640_000, spec: "Mistweaver" }] },
+  }, "healer", "healer");
+  healer.metric = "hps";
+  const hHtml = detailMatrixHTML(healer, ENCOUNTERS, 12);
+  assert.match(hHtml, /<span class="amt" title="HPS">640k<\/span>/);
+  assert.match(hHtml, /under it = HPS on that run/);
+  assert.doesNotMatch(hHtml, /DPS/, "a healing table never says DPS");
+});
+
+test("detailMatrixHTML tolerates runs with no amount", () => {
+  const p = playerFromResult({
+    classID: 4,
+    [`e${AK}`]: { ranks: [{ historicalPercent: 91.2, bracketData: 12, spec: "Fire" }] },
+  });
+  const html = detailMatrixHTML(p, ENCOUNTERS, 12);
+  assert.match(html, /91%/);
+  assert.doesNotMatch(html, /class="amt"/, "no amount, no empty line");
 });
 
 test("nameHTML uses class color and escapes", () => {
