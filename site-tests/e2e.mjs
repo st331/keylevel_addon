@@ -521,7 +521,9 @@ try {
       assert.ok(options.includes("Windrunner Spire"), "current season's dungeons fetched");
       assert.ok(!options.includes("Last Season Dungeon"), "stale season dropped, not served for 24h");
       const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("kllZoneCache")));
-      assert.equal(stored.v, 2, "rewritten with the current cache version");
+      // >= 2 rather than == 2: a future season bump must not fail this test,
+      // but a version-less cache (the bug being fixed) still must
+      assert.ok(typeof stored.v === "number" && stored.v >= 2, "rewritten with a cache version");
       assert.ok(stored.until - Date.now() <= 3 * 3600_000 + 5000, "short TTL bounds the next rollover");
     });
 
