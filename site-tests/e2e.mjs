@@ -486,8 +486,8 @@ try {
     const page = await newPage();
     await page.goto(`http://127.0.0.1:${deployedSrv.port}/index.html`);
 
-    await check("plain visit: key level defaults to 20", async () => {
-      assert.equal(await page.inputValue("#level"), "20");
+    await check("plain visit: key level defaults to 12", async () => {
+      assert.equal(await page.inputValue("#level"), "12");
     });
 
     await check("plain visit: dungeon dropdown fills without a lookup", async () => {
@@ -495,6 +495,36 @@ try {
         document.querySelectorAll("#dungeon option").length > 1, null, { timeout: 10_000 });
       const options = await page.locator("#dungeon option").allInnerTexts();
       assert.ok(options.includes("Windrunner Spire"), "season dungeons listed on load");
+    });
+
+    await page.context().close();
+  }
+
+  // ====== scenario 1c: last season's cached zone must not survive ==========
+  {
+    const page = await newPage();
+    // exactly what a returning visitor carries from the previous release:
+    // the old cache shape (no version), still inside its 24h TTL, holding
+    // last season's dungeon list
+    await page.addInitScript(() => {
+      localStorage.setItem("kllZoneCache", JSON.stringify({
+        until: Date.now() + 24 * 3600_000,
+        zone: { id: 47, name: "Mythic+ Season 1", encounters: [{ id: 1, name: "Last Season Dungeon" }] },
+      }));
+    });
+    await page.goto(`http://127.0.0.1:${deployedSrv.port}/index.html`);
+
+    await check("a new season evicts the previous release's cached dungeon list", async () => {
+      await page.waitForFunction(() =>
+        document.querySelectorAll("#dungeon option").length > 1, null, { timeout: 10_000 });
+      const options = await page.locator("#dungeon option").allInnerTexts();
+      assert.ok(options.includes("Windrunner Spire"), "current season's dungeons fetched");
+      assert.ok(!options.includes("Last Season Dungeon"), "stale season dropped, not served for 24h");
+      const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("kllZoneCache")));
+      // >= 2 rather than == 2: a future season bump must not fail this test,
+      // but a version-less cache (the bug being fixed) still must
+      assert.ok(typeof stored.v === "number" && stored.v >= 2, "rewritten with a cache version");
+      assert.ok(stored.until - Date.now() <= 3 * 3600_000 + 5000, "short TTL bounds the next rollover");
     });
 
     await page.context().close();

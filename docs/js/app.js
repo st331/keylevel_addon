@@ -80,11 +80,18 @@ async function ensureToken(force) {
 
 // ---------------------------------------------------------------- zone
 
+// A new season means a new zone id and a new dungeon list. Bumping this
+// discards every stored season cache on the next visit; the short TTL then
+// bounds how long the *next* rollover can serve a stale dungeon list
+// without anyone shipping a deploy.
+const ZONE_CACHE_VERSION = 2;
+const ZONE_CACHE_TTL = 3 * 3600_000; // 3 hours
+
 async function ensureZone(token, force) {
   if (!force) {
     try {
       const cached = JSON.parse(localStorage.getItem(LS.zoneCache) || "null");
-      if (cached && cached.until > Date.now() && cached.zone?.encounters?.length) {
+      if (cached?.v === ZONE_CACHE_VERSION && cached.until > Date.now() && cached.zone?.encounters?.length) {
         return cached.zone;
       }
     } catch { /* re-fetch */ }
@@ -95,7 +102,9 @@ async function ensureZone(token, force) {
     throw new WclError("could not find the current Mythic+ season zone on Warcraft Logs");
   }
   const slim = { id: zone.id, name: zone.name, encounters: zone.encounters };
-  localStorage.setItem(LS.zoneCache, JSON.stringify({ until: Date.now() + 24 * 3600_000, zone: slim }));
+  localStorage.setItem(LS.zoneCache, JSON.stringify({
+    v: ZONE_CACHE_VERSION, until: Date.now() + ZONE_CACHE_TTL, zone: slim,
+  }));
   return slim;
 }
 

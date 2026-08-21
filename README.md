@@ -157,8 +157,12 @@ scripts/test.sh     run everything
   same answer the website gives. Data is per character: alts look like new
   players.
 - Your API client allows 3,600 points/hour — far more than a night of
-  key-running needs. The site batches all dungeons per character into single
-  requests and caches the token (~1 year) and season list (24h).
+  key-running needs. The site sends every character's request in parallel,
+  batches all dungeons per character into single requests, and caches the
+  token (~1 year), the season list (3h), and each looked-up character (1h —
+  **⟳ Fresh data** re-fetches). The season is auto-detected, so a new
+  Mythic+ season needs no update here: the dungeon list follows within the
+  season cache's 3 hours.
 - The Warcraft Logs API's browser access (CORS) is intentional but not
   contractual; if they ever turn it off, the fallback is a tiny proxy — open
   an issue if lookups suddenly fail with CORS errors.

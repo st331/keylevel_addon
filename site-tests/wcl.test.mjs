@@ -102,3 +102,16 @@ test("guessMythicPlusZone picks live keystone zone, skipping PTR", () => {
   assert.equal(guessMythicPlusZone(zones).id, 47);
   assert.equal(guessMythicPlusZone(zones.slice(0, 2)).id, 39, "frozen fallback");
 });
+
+test("a season rollover picks the NEW season while the old one is still unfrozen", () => {
+  // the real shape at the 12.1 rollover: Warcraft Logs left Season 1 (47)
+  // unfrozen for a while after Season 2 (55) opened, both in expansion 7 —
+  // so "newest expansion" alone does not decide it, the zone id must
+  const zones = [
+    { id: 47, name: "Mythic+ Season 1", frozen: false, brackets: { type: "Keystone Level", min: 2, max: 25 }, expansion: { id: 7 } },
+    { id: 55, name: "Mythic+ Season 2", frozen: false, brackets: { type: "Keystone Level", min: 2, max: 30 }, expansion: { id: 7 } },
+    { id: 45, name: "Mythic+ Season 3", frozen: true, brackets: { type: "Keystone Level" }, expansion: { id: 6 } },
+  ];
+  assert.equal(guessMythicPlusZone(zones).id, 55, "Season 2 wins over a still-open Season 1");
+  assert.equal(guessMythicPlusZone([...zones].reverse()).id, 55, "and not by list order");
+});
