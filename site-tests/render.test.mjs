@@ -278,6 +278,40 @@ test("detailMatrixHTML tolerates runs with no amount", () => {
   assert.doesNotMatch(html, /class="amt"/, "no amount, no empty line");
 });
 
+test("scoresHTML shows both seasons with a safe colour", async () => {
+  const { scoresHTML } = await import("../docs/js/render.js");
+  const html = scoresHTML([
+    { slug: "season-mn-2", label: "S2", all: 3515, tank: 0, healer: 0, dps: 3515, color: "#ff8000" },
+    { slug: "season-mn-1", label: "S1", all: 4350.5, tank: 3682, healer: 3389, dps: 670, color: "#e268a8" },
+  ]);
+  assert.match(html, /<i>S2<\/i><b style="color:#ff8000">3515<\/b>/);
+  assert.match(html, /<i>S1<\/i><b style="color:#e268a8">4351<\/b>/, "rounded for display");
+  assert.match(html, /tank 3682 · healer 3389 · dps 670/, "role split in the tooltip");
+  assert.match(html, /Raider\.IO/, "attributed so the number's origin is clear");
+  assert.equal(scoresHTML(null), "", "no scores, nothing rendered");
+  assert.equal(scoresHTML([]), "");
+
+  // a colour the parser rejected must not become an attribute
+  const noColor = scoresHTML([{ slug: "season-mn-2", label: "S2", all: 100, tank: 0, healer: 0, dps: 100, color: null }]);
+  assert.doesNotMatch(noColor, /style=/);
+  assert.match(noColor, /<b>100<\/b>/);
+});
+
+test("summaryHTML places scores in the applicant cell, not a new column", () => {
+  const entries = [{
+    fullName: "Alice-Area52", key: "k", player: alice, slug: "area-52", region: "us",
+    scores: [{ slug: "season-mn-2", label: "S2", all: 3515, tank: 0, healer: 0, dps: 3515, color: "#ff8000" }],
+  }];
+  const html = summaryHTML(entries, { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS });
+  assert.match(html, /class="scores"/);
+  const headers = (html.match(/<th>/g) ?? []).length;
+  assert.equal(headers, 3, "still three columns");
+  // the score sits inside the same cell as the name
+  const cell = /<td>([\s\S]*?)<\/td>/.exec(html)[1];
+  assert.match(cell, /Alice-Area52/);
+  assert.match(cell, /3515/);
+});
+
 test("nameHTML uses class color and escapes", () => {
   const html = nameHTML("Foo<bar>-Realm", "MAGE");
   assert.match(html, /#3fc7eb/);

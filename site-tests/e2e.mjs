@@ -154,6 +154,39 @@ function characterResponse(query) {
   return { data: { characterData: out } };
 }
 
+// --- fake Raider.IO --------------------------------------------------------
+// Season scores come from Raider.IO because Warcraft Logs only sees uploaded
+// runs. Foo has both seasons; Priestess only played last season; Switcher is
+// unknown to Raider.IO (404) and must still render its Warcraft Logs data.
+function startFakeRio() {
+  const state = { requests: [] };
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://x");
+    const name = url.searchParams.get("name");
+    state.requests.push({ name, fields: url.searchParams.get("fields"), realm: url.searchParams.get("realm"), region: url.searchParams.get("region") });
+    res.setHeader("access-control-allow-origin", req.headers.origin ?? "*");
+    res.setHeader("content-type", "application/json");
+    const seasons = {
+      Foo: [
+        { season: "season-mn-2", scores: { all: 3515, tank: 0, healer: 0, dps: 3515 }, segments: { all: { color: "#ff8000" } } },
+        { season: "season-mn-1", scores: { all: 4350.5, tank: 0, healer: 0, dps: 4350.5 }, segments: { all: { color: "#e268a8" } } },
+      ],
+      Priestess: [
+        { season: "season-mn-2", scores: { all: 0, tank: 0, healer: 0, dps: 0 }, segments: { all: { color: "#ffffff" } } },
+        { season: "season-mn-1", scores: { all: 2750, tank: 0, healer: 2750, dps: 0 }, segments: { all: { color: "#a335ee" } } },
+      ],
+    }[name];
+    // Raider.IO knows this realm only as "area-52"; Warcraft Logs resolved
+    // these characters at "area52", so the client must retry the other spelling
+    if (url.searchParams.get("realm") === "area52") {
+      res.writeHead(400); res.end(JSON.stringify({ statusCode: 400, error: "Bad Request" })); return;
+    }
+    if (!seasons) { res.writeHead(404); res.end(JSON.stringify({ statusCode: 404, error: "Not Found" })); return; }
+    res.end(JSON.stringify({ name, mythic_plus_scores_by_season: seasons }));
+  });
+  return new Promise((r) => server.listen(0, "127.0.0.1", () => r({ server, state, port: server.address().port })));
+}
+
 function startFakeWcl() {
   const state = { tokenRequests: 0, gqlRequests: 0, lastTokenAuth: null, lastTokenGrant: null };
   const server = http.createServer((req, res) => {
@@ -190,6 +223,7 @@ function startFakeWcl() {
 const bareSrv = await startStatic(); // repo copy: placeholder intact
 const deployedSrv = await startStatic({ injectSecret: "e2e-injected-secret" });
 const wcl = await startFakeWcl();
+const rio = await startFakeRio();
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM } : {},
 );
@@ -208,12 +242,14 @@ async function check(name, fn) {
 async function newPage() {
   const page = await (await browser.newContext()).newPage();
   page.on("pageerror", (e) => { failed++; console.error("not ok - page error: " + e.message); });
-  await page.addInitScript(({ tokenUrl, apiUrl }) => {
+  await page.addInitScript(({ tokenUrl, apiUrl, rioUrl }) => {
     localStorage.setItem("kllTokenUrl", tokenUrl);
     localStorage.setItem("kllApiUrl", apiUrl);
+    localStorage.setItem("kllRioUrl", rioUrl);
   }, {
     tokenUrl: `http://127.0.0.1:${wcl.port}/token`,
     apiUrl: `http://127.0.0.1:${wcl.port}/gql`,
+    rioUrl: `http://127.0.0.1:${rio.port}/profile`,
   });
   return page;
 }
@@ -265,6 +301,33 @@ try {
       assert.match(cells[2], /· 3mo/, "best run's age shown");
       const ghost = await page.locator("tr.row", { hasText: "Ghost-Sargeras" }).innerText();
       assert.match(ghost, /no WCL character/);
+    });
+
+    await check("both seasons' Mythic+ scores show under the name", async () => {
+      const row = page.locator("tr.row", { hasText: "Foo-Area52" });
+      const text = await row.innerText();
+      assert.match(text, /S2\s*3515/, "this season");
+      assert.match(text, /S1\s*4351/, "last season, rounded");
+      const req = rio.state.requests.find((r) => r.name === "Foo");
+      assert.equal(req.fields, "mythic_plus_scores_by_season:current:previous",
+        "one chained field — repeating it would drop a season");
+      assert.equal(req.realm, "area52", "tries the slug that resolved on WCL first");
+      const ok = rio.state.requests.filter((r) => r.name === "Foo" && r.realm === "area-52");
+      assert.equal(ok.length, 1, "then falls back to Raider.IO's spelling");
+      assert.equal(req.region, "us");
+    });
+
+    await check("a season the character never played is omitted, not shown as 0", async () => {
+      const text = await page.locator("tr.row", { hasText: "Priestess-Area52" }).innerText();
+      assert.match(text, /S1\s*2750/, "the season she played");
+      assert.doesNotMatch(text, /S2\s*0\b/, "an unplayed season would read as 'terrible', not 'absent'");
+    });
+
+    await check("Raider.IO not knowing a character costs nothing", async () => {
+      assert.ok(rio.state.requests.some((r) => r.name === "Switcher"), "we did ask");
+      const row = page.locator("tr.row", { hasText: "Switcher-Area52" });
+      assert.equal(await row.locator(".scores").count(), 0, "no score block");
+      assert.match(await row.innerText(), /92b/, "but the Warcraft Logs data is intact");
     });
 
     await check("queries use the dps metric (Key %), not playerscore", async () => {
@@ -549,6 +612,7 @@ try {
   bareSrv.server.close();
   deployedSrv.server.close();
   wcl.server.close();
+  rio.server.close();
 }
 
 console.log(failed === 0 ? "e2e: all checks passed" : `e2e: ${failed} check(s) FAILED`);

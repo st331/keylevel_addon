@@ -143,6 +143,23 @@ export function roleChipsHTML(entry) {
   }).join("");
 }
 
+// Mythic+ season scores (Raider.IO), newest season first: "S2 3515 · S1 4350".
+// Tinted with Raider.IO's own tier colour; the title breaks it out by role.
+export function scoresHTML(scores) {
+  if (!scores?.length) return "";
+  const parts = scores.map((s) => {
+    const roles = [
+      s.tank ? `tank ${Math.round(s.tank)}` : null,
+      s.healer ? `healer ${Math.round(s.healer)}` : null,
+      s.dps ? `dps ${Math.round(s.dps)}` : null,
+    ].filter(Boolean).join(" · ");
+    const title = `${s.slug}: ${Math.round(s.all)}${roles ? ` (${roles})` : ""} — Mythic+ score from Raider.IO`;
+    const style = s.color ? ` style="color:${s.color}"` : "";
+    return `<span class="score" title="${esc(title)}"><i>${esc(s.label)}</i><b${style}>${Math.round(s.all)}</b></span>`;
+  });
+  return `<div class="scores">${parts.join("")}</div>`;
+}
+
 // Small ↗ link to the character's full Warcraft Logs page.
 export function profileLinkHTML(region, slug, fullName) {
   if (!slug || !region) return "";
@@ -256,7 +273,7 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
     const { fullName, player, slug, region, ev } = entry;
     const key = esc(entry.key ?? fullName);
     html += `<tr class="row" data-idx="${i}" data-key="${key}">
-      <td>${nameHTML(fullName, player?.class)}${roleChipsHTML(entry)}${profileLinkHTML(region, slug, fullName)}</td>
+      <td>${nameHTML(fullName, player?.class)}${roleChipsHTML(entry)}${profileLinkHTML(region, slug, fullName)}${scoresHTML(entry.scores)}</td>
       <td>${anyCellHTML(ev, level)}</td>
       <td>${dungeonCellHTML(ev, level, encounter?.id)}</td>
     </tr>
