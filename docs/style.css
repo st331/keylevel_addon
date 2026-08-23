@@ -105,6 +105,11 @@ button.role{ font-family:inherit; background:transparent; cursor:pointer; margin
 button.role.dim{ opacity:.35 }
 button.role.dim:hover{ opacity:.85 }
 button.role.sel{ border-color:currentColor }
+/* Mythic+ season scores under the applicant's name */
+.scores{ display:flex; gap:.5rem; margin-top:3px; font-size:.68rem }
+.score i{ font-style:normal; color:var(--muted); margin-right:.22rem; letter-spacing:.04em }
+.score b{ font-weight:700; font-variant-numeric:tabular-nums; color:var(--ink) }
+
 /* raw throughput under each percentile in the detail matrix */
 .amt{
   display:block; font-size:.66rem; color:var(--muted);

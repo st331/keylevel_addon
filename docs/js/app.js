@@ -11,6 +11,7 @@ import { playerFromResult, encounterByName, windowLevels, rolesWithRuns, buildRo
 import { summaryHTML } from "./render.js";
 import { embeddedCredentials } from "./config.js";
 import { cacheKey, pruneCache, slimResult } from "./cache.js";
+import { fetchScores, DEFAULT_RIO_URL } from "./rio.js";
 
 const LEVEL_WINDOW = 4; // only key levels within ±4 of the target matter
 
@@ -20,8 +21,8 @@ const MISSING_CREDS_MSG =
   "this deployment has no Warcraft Logs credentials — the repo owner needs to "
   + "add the WCL_CLIENT_SECRET Actions secret and re-run the \"Deploy site\" workflow";
 
-// localStorage keys (kllTokenUrl/kllApiUrl exist so tests — or a future
-// proxy — can repoint the endpoints)
+// localStorage keys (kllTokenUrl/kllApiUrl/kllRioUrl exist so tests — or a
+// future proxy — can repoint the endpoints)
 const LS = {
   token: "kllToken",
   tokenExpires: "kllTokenExpires",
@@ -30,12 +31,16 @@ const LS = {
   region: "kllRegion",
   tokenUrl: "kllTokenUrl",
   apiUrl: "kllApiUrl",
+  rioUrl: "kllRioUrl",
 };
+
+const rioEndpoint = () => localStorage.getItem(LS.rioUrl) || DEFAULT_RIO_URL;
 
 // ------------------------------------------------- per-character cache
 
 // bumping this discards every previously stored cache on the next visit
-const CHAR_CACHE_VERSION = 2;
+// (3: entries now also carry Raider.IO season scores)
+const CHAR_CACHE_VERSION = 3;
 
 function loadCharCache() {
   try {
@@ -173,6 +178,7 @@ async function lookup(ev) {
     const slugs = new Map();      // key -> slug that resolved (or best guess)
     const regions = new Map();    // key -> region actually used
     const hpsResults = new Map(); // key -> hps result
+    const rioScores = new Map();  // key -> Raider.IO season scores
     const now = Date.now();
     const cache = pruneCache(loadCharCache(), now);
     const fetchedKeys = [];
@@ -188,6 +194,7 @@ async function lookup(ev) {
         results.set(k, hit.dps ?? null);
         slugs.set(k, hit.slug);
         if (hit.hps != null) hpsResults.set(k, hit.hps);
+        if (hit.rio != null) rioScores.set(k, hit.rio);
         continue;
       }
       fetchedKeys.push(k);
@@ -221,14 +228,37 @@ async function lookup(ev) {
     // heals needs both sides). Cache hits already carry their hps side.
     const needHps = [...byKey.keys()].filter((k) =>
       !hpsResults.has(k) && rolesWithRuns(results.get(k) ?? null).has("healer"));
-    if (needHps.length > 0) {
-      setStatus(`fetching healing rankings for ${needHps.length} character(s)…`);
-      const batch = needHps.map((k) => ({
+    // Mythic+ season scores come from Raider.IO (Warcraft Logs only sees
+    // uploaded runs, so a score summed from its ranks undercounts). It runs
+    // alongside the healing pass and can fail without costing us anything.
+    const needRio = fetchedKeys.filter((k) => !rioScores.has(k));
+
+    if (needHps.length > 0 || needRio.length > 0) {
+      setStatus(needHps.length
+        ? `fetching healing rankings for ${needHps.length} character(s)…`
+        : "fetching Mythic+ scores…");
+      const hpsBatch = needHps.map((k) => ({
         key: k, name: byKey.get(k).name,
         serverSlug: slugs.get(k), region: regions.get(k),
       }));
-      const fetched = await fetchCharactersParallel(ctx, batch, zone.encounters, "hps", perRequest);
-      for (const r of fetched) hpsResults.set(r.key, r.result);
+      const rioBatch = needRio.map((k) => {
+        const c = byKey.get(k);
+        // the slug that worked on WCL first, then the other spellings —
+        // Raider.IO doesn't always agree with WCL on realm slugs
+        const alts = c.slug ? [c.slug] : slugCandidates(c.realm);
+        return {
+          key: k, name: c.name, region: regions.get(k),
+          slugs: [slugs.get(k), ...alts].filter(Boolean),
+        };
+      });
+      const [hpsFetched, rioFetched] = await Promise.all([
+        hpsBatch.length
+          ? fetchCharactersParallel(ctx, hpsBatch, zone.encounters, "hps", perRequest)
+          : [],
+        fetchScores(rioBatch, { rioUrl: rioEndpoint() }),
+      ]);
+      for (const r of hpsFetched) hpsResults.set(r.key, r.result);
+      for (const r of rioFetched) if (r.scores) rioScores.set(r.key, r.scores);
     }
 
     // remember what we just fetched: an hour per character, this season
@@ -242,6 +272,7 @@ async function lookup(ev) {
           slug: slugs.get(k),
           dps: slimResult(results.get(k) ?? null),
           ...(hpsResults.has(k) && { hps: slimResult(hpsResults.get(k)) }),
+          ...(rioScores.has(k) && { rio: rioScores.get(k) }),
         };
       }
       saveCharCache(pruneCache(cache, now));
@@ -262,6 +293,7 @@ async function lookup(ev) {
         fullName: c.full,
         key: k,
         detected, selected, sortRole: selected, order, topKeys, byRole: windowed,
+        scores: rioScores.get(k) ?? null,
         // no per-role runs at all: unfiltered fallback keeps the old
         // "no M+ logs" / "no WCL character" rows working
         player: selected
