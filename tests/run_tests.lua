@@ -9,6 +9,7 @@ _G.__T = B.T
 dofile("tests/test_core.lua")
 dofile("tests/test_flow.lua")
 dofile("tests/test_saved_vars.lua")
+dofile("tests/test_resilience.lua")
 
 local failed = B.T.summary()
 os.exit(failed > 0 and 1 or 0)

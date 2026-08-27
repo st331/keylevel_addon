@@ -2,7 +2,7 @@
 ## Title: KeyLevelLogs
 ## Notes: Collects your M+ applicants' names and builds a one-click Warcraft Logs lookup link for the KeyLevelLogs website.
 ## Author: slainsteel
-## Version: 0.3.0
+## Version: 0.4.0
 ## SavedVariables: KeyLevelLogsDB
 ## X-Website: https://github.com/st331/keylevel_addon
 
