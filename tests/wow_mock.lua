@@ -237,6 +237,8 @@ function M.install()
     return newWidget(kind, name, parent, template)
   end
 
+  _G.IsLoggedIn = function() return M.state.loggedIn and true or false end
+
   _G.UIParent = newWidget("Frame", "UIParent", nil)
   _G.GameFontNormal = {}
   _G.GameFontNormalLarge = {}
@@ -491,12 +493,28 @@ end
 -- Simulate the load sequence for an addon whose files are already executed.
 function M.SimulateLogin(addonName)
   M.FireEvent("ADDON_LOADED", addonName)
+  M.state.loggedIn = true
   M.FireEvent("PLAYER_LOGIN")
   M.FireEvent("PLAYER_ENTERING_WORLD", true, false)
 end
 
 function M.SetApplicants(list)
   M.state.applicants = list
+end
+
+-- Whether the client considers the player logged in (IsLoggedIn()). Addons
+-- loaded late see this already true, with PLAYER_LOGIN long gone.
+function M.SetLoggedIn(v)
+  M.state.loggedIn = v and true or false
+end
+
+-- Collect everything the addon print()s during fn().
+function M.CapturePrint(fn)
+  local start = #M.state.prints
+  fn()
+  local out = {}
+  for i = start + 1, #M.state.prints do out[#out + 1] = M.state.prints[i] end
+  return out
 end
 
 function M.Reset()
@@ -509,6 +527,7 @@ function M.Reset()
   M.state.keystoneMapID = nil
   M.state.timers = {}
   M.state.prints = {}
+  M.state.loggedIn = false
   widgetId = 0
 end
 

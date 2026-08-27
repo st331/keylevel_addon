@@ -109,6 +109,30 @@ end
 -- Context: which key level / dungeon are we recruiting for?
 --------------------------------------------------------------------------
 
+local MIN_KEY, MAX_KEY = 2, 40
+
+-- Pull the key level out of a listing title.
+--
+-- Titles mix the key level with Raider.IO score requirements — "+2.5k io
+-- +18", "3200+ io Murder Row +14", "3.2k+ rio +20". A plain "+number"
+-- match reads the *score* as the key level ("+2.5k" -> +2), which is the
+-- wrong-key-level bug people hit. So score-shaped tokens are removed
+-- first, then "+N" is preferred over "N+", and only plausible key levels
+-- are accepted.
+function ns.ParseKeyLevel(title)
+  if type(title) ~= "string" then return nil end
+  local s = title
+  s = s:gsub("%+?%s*%d+%.?%d*%s*[kK]%s*%+?", " ")  -- 2.5k / +3k / 3.2k+
+  s = s:gsub("%+?%s*%d%d%d%d+%s*%+?", " ")         -- 3200 / 2500+ (io scores)
+  for _, pattern in ipairs({ "%+%s*(%d+)", "(%d+)%s*%+" }) do
+    for n in s:gmatch(pattern) do
+      local v = tonumber(n)
+      if v and v >= MIN_KEY and v <= MAX_KEY then return v end
+    end
+  end
+  return nil
+end
+
 -- Reads the group the player has listed in the group finder, if any.
 -- Returns dungeonName, keyLevel (parsed from the listing title, e.g.
 -- "AK +12 weekly"), either may be nil.
@@ -134,8 +158,7 @@ local function readActiveListing()
   end
 
   if usable(entry.name) and type(entry.name) == "string" then
-    local lvl = entry.name:match("%+%s*(%d%d?)")
-    level = lvl and tonumber(lvl) or nil
+    level = ns.ParseKeyLevel(entry.name)
   end
 
   return dungeonName, level
@@ -149,8 +172,21 @@ function ns.GetContext()
   local db = ns.db or {}
   local listingDungeon, listingLevel = readActiveListing()
 
-  local level = db.keyLevelOverride or listingLevel
-    or (C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel and C_MythicPlus.GetOwnedKeystoneLevel())
+  -- track WHERE the level came from: when it's wrong, that's the one thing
+  -- you need to know to fix it (/kll status shows it)
+  local level, levelSource
+  if db.keyLevelOverride then
+    level, levelSource = db.keyLevelOverride, "manual override"
+  elseif listingLevel then
+    level, levelSource = listingLevel, "your listing's title"
+  else
+    local ok, owned = pcall(function()
+      return C_MythicPlus and C_MythicPlus.GetOwnedKeystoneLevel and C_MythicPlus.GetOwnedKeystoneLevel()
+    end)
+    if ok and usable(owned) and type(owned) == "number" and owned > 0 then
+      level, levelSource = owned, "the keystone you're holding"
+    end
+  end
   if level == 0 then level = nil end
 
   local dungeonName = db.dungeonOverride or listingDungeon
@@ -162,7 +198,7 @@ function ns.GetContext()
     end
   end
 
-  return { level = level, dungeonName = dungeonName }
+  return { level = level, dungeonName = dungeonName, levelSource = levelSource }
 end
 
 --------------------------------------------------------------------------
@@ -288,24 +324,63 @@ end
 -- Events
 --------------------------------------------------------------------------
 
+-- Build the window if it isn't built yet. Returns the UI, or nil after
+-- saying why — the window silently failing to appear is the one bug the
+-- person in front of the game cannot diagnose (script errors are off by
+-- default, so a raw Lua error would be invisible too).
+function ns.EnsureUI()
+  local UI = ns.UI
+  if not UI then
+    ns.Print("|cffff5555UI.lua did not load|r — reinstall the KeyLevelLogs folder (both .lua files).")
+    return nil
+  end
+  if UI.frame then return UI end
+  if not ns.db then pcall(ns.InitDB) end
+  local ok, err = pcall(UI.Init, UI)
+  if ok and UI.frame then return UI end
+  -- drop anything half-built so the next attempt starts clean
+  if UI.frame and UI.frame.Hide then pcall(UI.frame.Hide, UI.frame) end
+  UI.frame = nil
+  ns.Print(("|cffff5555could not open the window|r — %s"):format(tostring(err)))
+  ns.Print("try /reload; if it keeps happening please report this with the message above.")
+  return nil
+end
+
+local didLogin = false
+local function onLogin()
+  if didLogin then return end
+  didLogin = true
+  if C_MythicPlus and C_MythicPlus.RequestMapInfo then
+    pcall(C_MythicPlus.RequestMapInfo)
+  end
+  ns.EnsureUI()
+  ns.RefreshApplicants()
+end
+
 local eventFrame = CreateFrame("Frame", "KeyLevelLogsEventFrame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" then
     if arg1 ~= ADDON_NAME then return end
     eventFrame:UnregisterEvent("ADDON_LOADED")
-    ns.InitDB()
+    -- Register FIRST: a failure while reading SavedVariables must not cost
+    -- us every other event (that would disable the addon for the session).
     eventFrame:RegisterEvent("PLAYER_LOGIN")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD") -- realm name can be nil during loading screens; re-read after
     eventFrame:RegisterEvent("LFG_LIST_APPLICANT_LIST_UPDATED")
     eventFrame:RegisterEvent("LFG_LIST_APPLICANT_UPDATED")
     eventFrame:RegisterEvent("LFG_LIST_ACTIVE_ENTRY_UPDATE")
-  elseif event == "PLAYER_LOGIN" then
-    if C_MythicPlus and C_MythicPlus.RequestMapInfo then
-      C_MythicPlus.RequestMapInfo()
+    local ok, err = pcall(ns.InitDB)
+    if not ok then
+      _G.KeyLevelLogsDB = {}
+      pcall(ns.InitDB)
+      ns.Print(("settings were unreadable and have been reset (%s)"):format(tostring(err)))
     end
-    if ns.UI and ns.UI.Init then ns.UI:Init() end
-    ns.RefreshApplicants()
+    -- Loaded late (on demand, or enabled mid-session)? PLAYER_LOGIN is long
+    -- gone and will not come again, so do its work now.
+    if IsLoggedIn and IsLoggedIn() then onLogin() end
+  elseif event == "PLAYER_LOGIN" then
+    onLogin()
   else
     -- any LFG applicant/entry change (or a fresh loading screen)
     ns.QueueRefresh()
@@ -324,10 +399,25 @@ local function slashStatus()
   local ctx = ns.GetContext()
   ns.Print(("key level: %s%s, dungeon: %s%s, region: %s"):format(
     ctx.level and ("+" .. ctx.level) or "unknown",
-    ns.db.keyLevelOverride and " (manual)" or "",
+    ctx.levelSource and (" (from " .. ctx.levelSource .. ")") or "",
     ctx.dungeonName or "unknown",
     ns.db.dungeonOverride and " (manual)" or "",
     ns.RegionSlug()))
+  if ctx.levelSource == "the keystone you're holding" then
+    ns.Print("note: your listing title has no \"+N\", so your own keystone is being used — /kll 12 sets it directly")
+  end
+  -- window state: the first thing to check when "it isn't showing up"
+  local UI = ns.UI
+  local w = (ns.db and ns.db.window) or {}
+  if not (UI and UI.frame) then
+    ns.Print("window: |cffff5555not built|r — run /kll to build it (errors will be shown)")
+  else
+    ns.Print(("window: %s at %s %d,%d%s"):format(
+      UI.frame:IsShown() and "|cff40ff40shown|r" or "hidden",
+      tostring(w.point or "CENTER"), math.floor(tonumber(w.x) or 0), math.floor(tonumber(w.y) or 0),
+      ns.db.autoShow and "" or " (auto-show off)"))
+  end
+  ns.Print(("applicants tracked: %d"):format(#(ns.applicants or {})))
   ns.Print(("lookup site: %s"):format((ns.db and ns.db.siteURL) or ns.DEFAULT_SITE_URL))
 end
 
@@ -336,12 +426,21 @@ function ns.HandleSlash(input)
   local cmd, rest = input:match("^(%S+)%s*(.-)$")
   cmd = cmd and cmd:lower() or ""
 
+  -- a slash command can arrive before ADDON_LOADED was handled
+  if not ns.db then pcall(ns.InitDB) end
+  if not ns.db then
+    ns.Print("|cffff5555settings are unavailable|r — try /reload.")
+    return
+  end
+
   if cmd == "" or cmd == "show" or cmd == "toggle" then
-    if ns.UI then
-      if cmd == "show" then ns.UI:SetShown(true) else ns.UI:Toggle() end
+    local UI = ns.EnsureUI()
+    if UI then
+      if cmd == "show" then UI:SetShown(true) else UI:Toggle() end
     end
   elseif cmd == "hide" then
-    if ns.UI then ns.UI:SetShown(false) end
+    local UI = ns.EnsureUI()
+    if UI then UI:SetShown(false) end
   elseif cmd:match("^%+?%d+$") then
     local level = tonumber(cmd:match("%d+"))
     if level < 2 then
@@ -383,7 +482,8 @@ function ns.HandleSlash(input)
   elseif cmd == "reset" then
     ns.db.window = nil
     ns.InitDB()
-    if ns.UI then ns.UI:RestorePosition(); ns.UI:SetShown(true) end
+    local UI = ns.EnsureUI()
+    if UI then UI:RestorePosition(); UI:SetShown(true) end
     ns.Print("window position reset")
   elseif cmd == "status" then
     slashStatus()

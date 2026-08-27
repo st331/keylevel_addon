@@ -136,7 +136,7 @@ end
 --------------------------------------------------------------------------
 
 function UI:SavePosition()
-  if not (self.frame and ns.db) then return end
+  if not (self.frame and ns.db and ns.db.window) then return end
   local point, _, relPoint, x, y = self.frame:GetPoint(1)
   if point then
     ns.db.window.point, ns.db.window.relPoint = point, relPoint
@@ -144,11 +144,34 @@ function UI:SavePosition()
   end
 end
 
+-- A saved offset far outside any screen (a stale position from another
+-- resolution, or a corrupted value) would park the window where it can
+-- never be seen — which is indistinguishable from "the addon is broken".
+local MAX_OFFSET = 3000
+
+local function sanePoint(v, fallback)
+  return type(v) == "string" and v ~= "" and v or fallback
+end
+
+local function saneOffset(v)
+  if type(v) ~= "number" or v ~= v then return 0 end -- also rejects nan
+  if v > MAX_OFFSET then return MAX_OFFSET end
+  if v < -MAX_OFFSET then return -MAX_OFFSET end
+  return v
+end
+
 function UI:RestorePosition()
-  if not (self.frame and ns.db) then return end
-  local w = ns.db.window
+  if not self.frame then return end
+  local w = (ns.db and ns.db.window) or {}
+  local point = sanePoint(w.point, "CENTER")
+  local relPoint = sanePoint(w.relPoint, point)
+  local x, y = saneOffset(w.x), saneOffset(w.y)
   self.frame:ClearAllPoints()
-  self.frame:SetPoint(w.point or "CENTER", UIParent, w.relPoint or w.point or "CENTER", w.x or 0, w.y or 0)
+  -- an unknown anchor name still throws; fall back to dead centre
+  if not pcall(self.frame.SetPoint, self.frame, point, UIParent, relPoint, x, y) then
+    self.frame:ClearAllPoints()
+    self.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  end
 end
 
 --------------------------------------------------------------------------
@@ -159,15 +182,19 @@ end
 --   sessionSnoozed   the X button: hide until this applicant batch clears
 --   auto-show        new applicants pop the window when allowed by both
 
+-- These are reached from slash commands, so they must never quietly do
+-- nothing when the frame hasn't been built yet: build it on demand.
 function UI:SetShown(shown)
+  if not self.frame and ns.EnsureUI and not ns.EnsureUI() then return end
   if not self.frame then return end
-  if ns.db then ns.db.window.shown = shown end
+  if ns.db and ns.db.window then ns.db.window.shown = shown end
   self.sessionSnoozed = false
   self.frame:SetShown(shown)
   if shown then self:Refresh() end
 end
 
 function UI:Toggle()
+  if not self.frame and ns.EnsureUI and not ns.EnsureUI() then return end
   if not self.frame then return end
   self:SetShown(not self.frame:IsShown())
 end
