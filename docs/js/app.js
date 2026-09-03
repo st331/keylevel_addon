@@ -5,7 +5,7 @@
 // visitors just paste names. An undeployed/unconfigured copy shows a clear
 // notice instead of a setup flow.
 
-import { parseEntriesInput, dedupeEntries, slugCandidates } from "./slugs.js";
+import { parseEntriesInput, dedupeEntries, slugCandidates, looksLikeRoster } from "./slugs.js";
 import { getToken, listZones, guessMythicPlusZone, fetchCharactersParallel, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
 import { playerFromResult, encounterByName, windowLevels, rolesWithRuns, buildRolePlayers, pickSelectedRole } from "./transform.js";
 import { summaryHTML } from "./render.js";
@@ -32,6 +32,7 @@ const LS = {
   tokenUrl: "kllTokenUrl",
   apiUrl: "kllApiUrl",
   rioUrl: "kllRioUrl",
+  autoPaste: "kllAutoPaste",
 };
 
 const rioEndpoint = () => localStorage.getItem(LS.rioUrl) || DEFAULT_RIO_URL;
@@ -442,6 +443,71 @@ function scheduleLookup(delay) {
   }, delay);
 }
 
+// ------------------------------------------------------- auto-paste
+//
+// With clipboard-read granted, alt-tabbing back to the page is enough: it
+// reads the roster you copied in-game and looks it up, saving the Ctrl+V.
+//
+// It cannot do better than that — a clipboard read requires the document to
+// be focused, so nothing can update while you are in the game.
+//
+// Chromium only. Firefox and Safari have no clipboard-read permission and
+// are not planning one; there they'd pop a "Paste" menu per read, which is
+// worse than the Ctrl+V it replaces, so the toggle stays hidden for them.
+
+let autoPasteOn = false;
+let lastIngested = null;
+
+const canAutoPaste = () =>
+  Boolean(navigator.clipboard?.readText && navigator.permissions?.query);
+
+function setAutoPasteUI() {
+  const btn = $("autopaste");
+  btn.classList.toggle("on", autoPasteOn);
+  btn.textContent = autoPasteOn ? "⧉ Auto-paste on" : "⧉ Auto-paste off";
+  btn.title = autoPasteOn
+    ? "Reading the clipboard when you switch to this tab. Only text that is entirely Name-Realm entries or character links is used — anything else is ignored."
+    : "Skip the Ctrl+V: read the clipboard automatically when you switch back to this tab (Chrome/Edge; asks permission once)";
+}
+
+// The click is the user gesture Chrome needs to be allowed to prompt.
+async function toggleAutoPaste() {
+  if (autoPasteOn) {
+    autoPasteOn = false;
+    localStorage.setItem(LS.autoPaste, "0");
+    setAutoPasteUI();
+    setStatus("auto-paste off — paste with Ctrl+V as usual");
+    return;
+  }
+  try {
+    await navigator.clipboard.readText(); // triggers the permission prompt
+    autoPasteOn = true;
+    localStorage.setItem(LS.autoPaste, "1");
+    setAutoPasteUI();
+    setStatus("auto-paste on — copy in-game, switch here, and it looks them up by itself");
+  } catch {
+    setAutoPasteUI();
+    setStatus("clipboard permission denied — allow it via the icon in the address bar, or keep using Ctrl+V", true);
+  }
+}
+
+// Never act on a clipboard that isn't unmistakably a roster: this fires on
+// every focus, so it sees passwords and everything else you copy.
+async function ingestClipboard() {
+  if (!autoPasteOn || running) return;
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    return; // permission revoked, or the document lost focus mid-read
+  }
+  if (!text || text === lastIngested) return;
+  if (!looksLikeRoster(text)) return; // not a roster — silently leave it alone
+  lastIngested = text;
+  $("names").value = text.trim();
+  scheduleLookup(PASTE_DELAY);
+}
+
 // ---------------------------------------------------------------- init
 
 function initFromParams() {
@@ -511,6 +577,19 @@ export function init() {
   // changing the key level or dungeon re-judges everyone already loaded
   for (const id of ["level", "dungeon", "region"]) {
     $(id).addEventListener("change", () => { lastSignature = null; scheduleLookup(PASTE_DELAY); });
+  }
+
+  // auto-paste: hidden entirely where the permission model can't support it
+  if (canAutoPaste()) {
+    autoPasteOn = localStorage.getItem(LS.autoPaste) === "1";
+    setAutoPasteUI();
+    $("autopaste").addEventListener("click", toggleAutoPaste);
+    window.addEventListener("focus", ingestClipboard);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) ingestClipboard();
+    });
+  } else {
+    $("autopaste").hidden = true;
   }
 
   const hasChars = initFromParams();

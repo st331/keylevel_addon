@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { slugCandidates, parseFullName, parseNamesInput, parseCharacterURL, parseEntriesInput, slugToNormalizedRealm, dedupeEntries } from "../docs/js/slugs.js";
+import { slugCandidates, parseFullName, parseNamesInput, parseCharacterURL, parseEntriesInput, slugToNormalizedRealm, dedupeEntries, looksLikeRoster } from "../docs/js/slugs.js";
 
 test("single-word realm", () => {
   assert.deepEqual(slugCandidates("Sargeras"), ["sargeras"]);
@@ -68,6 +68,37 @@ test("parseCharacterURL: warcraftlogs + encoded names + rejects junk", () => {
   assert.equal(parseCharacterURL("https://raider.io/characters/xx/area-52/foo"), null, "bad region");
   assert.equal(parseCharacterURL("https://raider.io/mythic-plus-rankings"), null);
   assert.equal(parseCharacterURL("Foo-Area52"), null);
+});
+
+test("looksLikeRoster accepts what the addon produces", () => {
+  assert.equal(looksLikeRoster("Foo-Area52"), true, "a single applicant");
+  assert.equal(looksLikeRoster("Foo-Area52\nBar-TwistingNether\nBaz-Sargeras"), true);
+  assert.equal(looksLikeRoster("Foo-Area52, Bar-Area52; Baz-Area52"), true, "comma/semicolon separated");
+  assert.equal(looksLikeRoster("Ñightblade-Area52"), true, "accented names");
+  assert.equal(looksLikeRoster("Foo-Azjol-Nerub"), true, "hyphenated realm typed by hand");
+  assert.equal(looksLikeRoster("https://raider.io/characters/eu/twisting-nether/Eurodude"), true);
+  assert.equal(looksLikeRoster("Foo-Area52\nhttps://raider.io/characters/us/area-52/Bar"), true, "mixed");
+  assert.equal(looksLikeRoster("  Foo-Area52  \n\n"), true, "stray whitespace");
+});
+
+test("looksLikeRoster refuses everything else the clipboard might hold", () => {
+  // the whole point: with clipboard-read granted the page sees every copy
+  assert.equal(looksLikeRoster("hunter2-mypassword"), false, "digits are not legal in a character name");
+  assert.equal(looksLikeRoster("well-known"), false, "a hyphenated english word is not Name-Realm");
+  assert.equal(looksLikeRoster("Hunter-abc"), false, "a lowercase realm is not what the addon emits");
+  assert.equal(looksLikeRoster("correct horse battery staple"), false, "prose");
+  assert.equal(looksLikeRoster("https://example.com/some/page"), false, "an unrelated link");
+  assert.equal(looksLikeRoster("Foo-Area52\nplease invite me!"), false,
+    "one junk line poisons the whole paste — never partially ingest");
+  assert.equal(looksLikeRoster("Foo-Area52 my password is hunter2"), false);
+  assert.equal(looksLikeRoster(""), false);
+  assert.equal(looksLikeRoster("   \n  "), false);
+  assert.equal(looksLikeRoster(null), false);
+  assert.equal(looksLikeRoster(undefined), false);
+  assert.equal(looksLikeRoster(12345), false, "non-string");
+  assert.equal(looksLikeRoster("Foo-" + "x".repeat(200)), false, "absurd token");
+  assert.equal(looksLikeRoster("A-B\n".repeat(300)), false, "absurd count");
+  assert.equal(looksLikeRoster("x".repeat(9000)), false, "absurd length");
 });
 
 test("dedupeEntries collapses a typed name and a URL of the same character", () => {

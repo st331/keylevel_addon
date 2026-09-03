@@ -147,7 +147,7 @@ function characterResponse(query) {
         ] },
         [`e${PIT}`]: { ranks: [{ historicalPercent: 99.4, rankPercent: 99.4, todayPercent: 97.0, bracketData: 14, amount: 990_000, spec: "Fire" }] },
       };
-    } else if (slug === "area52" && /^(Newguy|Racer\d|Retry\d)$/.test(name) && !isHps) {
+    } else if (slug === "area52" && /^(Newguy|Racer\d|Retry\d|Offguy|Clipguy)$/.test(name) && !isHps) {
       // stand-ins for the applicants that stream in while you are vetting
       out[alias] = {
         classID: 3,
@@ -676,6 +676,60 @@ try {
         null, { timeout: 10_000 });
       const names = await page.locator("tr.row .charname").allInnerTexts();
       assert.ok(names.some((n) => n.includes("Retry1")), "retry of the identical roster works");
+    });
+
+    await check("auto-paste: switching back to the tab ingests the roster, no Ctrl+V", async () => {
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await page.evaluate(() => document.querySelector("#autopaste").click());
+      await page.waitForFunction(
+        () => document.querySelector("#autopaste").classList.contains("on"),
+        null, { timeout: 10_000 });
+
+      await page.evaluate(() => {
+        document.querySelector("#status").textContent = "";
+        return navigator.clipboard.writeText("Foo-Area52\nClipguy-Area52");
+      });
+      // the alt-tab back into the page
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await page.waitForFunction(
+        () => document.querySelector("#status")?.textContent?.startsWith("done"),
+        null, { timeout: 10_000 });
+
+      assert.equal(await page.inputValue("#names"), "Foo-Area52\nClipguy-Area52",
+        "roster taken from the clipboard by itself");
+      const names = await page.locator("tr.row .charname").allInnerTexts();
+      assert.ok(names.some((n) => n.includes("Clipguy")), "and looked up");
+    });
+
+    await check("auto-paste ignores a clipboard that is not a roster", async () => {
+      assert.ok(await page.evaluate(() => document.querySelector("#autopaste").classList.contains("on")),
+        "guard test is meaningless unless auto-paste is actually on");
+      const before = wcl.state.charQueries.length;
+      const rosterBefore = await page.inputValue("#names");
+      // exactly the thing the guard exists for
+      await page.evaluate(() => navigator.clipboard.writeText("hunter2-mypassword"));
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await page.waitForTimeout(800);
+      assert.equal(await page.inputValue("#names"), rosterBefore, "roster untouched");
+      assert.equal(wcl.state.charQueries.length, before, "nothing was sent anywhere");
+
+      // and a roster with one junk line mixed in is refused wholesale
+      await page.evaluate(() => navigator.clipboard.writeText("Foo-Area52\nplease invite me!"));
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await page.waitForTimeout(800);
+      assert.equal(await page.inputValue("#names"), rosterBefore, "partial rosters never ingested");
+      assert.equal(wcl.state.charQueries.length, before);
+    });
+
+    await check("auto-paste stays off until asked, and the choice sticks", async () => {
+      assert.equal(await page.evaluate(() => localStorage.getItem("kllAutoPaste")), "1");
+      await page.evaluate(() => document.querySelector("#autopaste").click());
+      assert.equal(await page.evaluate(() => localStorage.getItem("kllAutoPaste")), "0");
+      const rosterBefore = await page.inputValue("#names");
+      await page.evaluate(() => navigator.clipboard.writeText("Offguy-Area52"));
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await page.waitForTimeout(600);
+      assert.equal(await page.inputValue("#names"), rosterBefore, "off means off");
     });
 
     await check("token fetched once and cached", async () => {
