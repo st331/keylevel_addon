@@ -39,10 +39,11 @@
     <div class="names-box">
       <label for="names">Applicants — <code>Name-Realm</code> or a Raider.IO / Armory / Warcraft Logs
         character link, one per line
-        <span class="label-hint">(links carry their own realm + region; the addon’s Copy URL fills all of this in)</span></label>
+        <span class="label-hint">(paste and it looks up straight away — only the names it hasn’t
+        seen cost a request, so re-pasting a growing roster is cheap)</span></label>
       <textarea id="names" rows="4" spellcheck="false" placeholder="Playerone-Area52&#10;https://raider.io/characters/us/area-52/Playertwo&#10;https://worldofwarcraft.blizzard.com/en-us/character/us/area-52/playerthree"></textarea>
       <div class="actions">
-        <button id="lookup" title="Results are cached for an hour — Shift-click for fresh data">Look up</button>
+        <button id="lookup" title="Pasting already runs the lookup — this is here for a re-run. Results are cached for an hour; Shift-click for fresh data">Look up</button>
         <button id="refresh" class="ghost" title="Re-fetch everyone now, ignoring the hour cache">⟳ Fresh data</button>
       </div>
     </div>
