@@ -147,6 +147,13 @@ function characterResponse(query) {
         ] },
         [`e${PIT}`]: { ranks: [{ historicalPercent: 99.4, rankPercent: 99.4, todayPercent: 97.0, bracketData: 14, amount: 990_000, spec: "Fire" }] },
       };
+    } else if (slug === "area52" && /^(Newguy|Racer\d)$/.test(name) && !isHps) {
+      // stand-ins for the applicants that stream in while you are vetting
+      out[alias] = {
+        classID: 3,
+        [`e${AK}`]: { ranks: [{ historicalPercent: 70.0, rankPercent: 70.0, bracketData: 12, amount: 700_000, spec: "Marksmanship", score: 400 }] },
+        [`e${PIT}`]: { ranks: [] },
+      };
     } else {
       out[alias] = null;
     }
@@ -535,6 +542,91 @@ try {
       assert.ok(wcl.state.charQueries.length > before, "works without a keyboard (touch devices)");
       assert.match(await page.locator("tr.row", { hasText: "Foo-Area52" }).innerText(), /99b/,
         "results re-render after the refresh");
+    });
+
+    await check("pasting the roster looks it up with no click", async () => {
+      const before = wcl.state.charQueries.length;
+      await page.evaluate(() => {
+        document.querySelector("#status").textContent = "";
+        document.querySelector("#results").innerHTML = "";
+      });
+      // paste a name that is NOT already loaded, the way the addon's
+      // "Names" button feeds it: whole roster replaced, growing each time
+      await page.evaluate(() => {
+        const ta = document.querySelector("#names");
+        ta.focus();
+        ta.value = "Foo-Area52\nPriestess-Area52\nNewguy-Area52";
+        // a real paste, so the page sees inputType insertFromPaste
+        ta.dispatchEvent(new InputEvent("paste", { bubbles: true }));
+        ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+      });
+      await page.waitForFunction(
+        () => document.querySelector("#status")?.textContent?.startsWith("done"),
+        null, { timeout: 10_000 });
+      assert.ok(await page.locator("tr.row").count() >= 3, "results rendered without pressing Look up");
+      assert.ok(wcl.state.charQueries.length > before, "the new name was actually fetched");
+    });
+
+    await check("re-pasting the same roster costs no extra request", async () => {
+      const before = wcl.state.charQueries.length;
+      await page.evaluate(() => {
+        const ta = document.querySelector("#names");
+        ta.dispatchEvent(new InputEvent("paste", { bubbles: true }));
+        ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+      });
+      await page.waitForTimeout(700);
+      assert.equal(wcl.state.charQueries.length, before,
+        "an unchanged roster is not re-looked-up (it churns every few seconds)");
+    });
+
+    await check("a paste landing mid-lookup is not dropped", async () => {
+      await page.evaluate(() => {
+        document.querySelector("#status").textContent = "";
+        const ta = document.querySelector("#names");
+        ta.value = "Foo-Area52\nRacer1-Area52";
+        ta.dispatchEvent(new InputEvent("paste", { bubbles: true }));
+        ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+        // second paste immediately after, while the first is still in flight
+        setTimeout(() => {
+          ta.value = "Foo-Area52\nRacer1-Area52\nRacer2-Area52";
+          ta.dispatchEvent(new InputEvent("paste", { bubbles: true }));
+          ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+        }, 180);
+      });
+      await page.waitForFunction(
+        () => document.querySelector("#names").value.includes("Racer2")
+          && document.querySelector("#status")?.textContent?.startsWith("done")
+          && document.querySelectorAll("tr.row").length >= 3,
+        null, { timeout: 10_000 });
+      const names = await page.locator("tr.row .charname").allInnerTexts();
+      assert.ok(names.some((n) => n.includes("Racer2")),
+        "the applicant added mid-flight still ends up on screen");
+    });
+
+    await check("a hand-picked role survives the next paste", async () => {
+      // Switcher is multi-role; pick the non-default one, then re-paste
+      await page.evaluate(() => {
+        const ta = document.querySelector("#names");
+        ta.value = "Switcher-Area52";
+        ta.dispatchEvent(new InputEvent("paste", { bubbles: true }));
+        ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+      });
+      await page.waitForFunction(() => document.querySelectorAll("tr.row").length === 1,
+        null, { timeout: 10_000 });
+      await page.locator('tr.row[data-key="Switcher-Area52@us"] button.role.dim').click();
+      assert.match(await page.locator('tr.row[data-key="Switcher-Area52@us"]').innerHTML(),
+        /role-tank sel/, "tank view chosen by hand");
+
+      await page.evaluate(() => {
+        const ta = document.querySelector("#names");
+        ta.value = "Switcher-Area52\nFoo-Area52";
+        ta.dispatchEvent(new InputEvent("paste", { bubbles: true }));
+        ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste" }));
+      });
+      await page.waitForFunction(() => document.querySelectorAll("tr.row").length === 2,
+        null, { timeout: 10_000 });
+      assert.match(await page.locator('tr.row[data-key="Switcher-Area52@us"]').innerHTML(),
+        /role-tank sel/, "still tank after the roster grew — choice not clobbered");
     });
 
     await check("token fetched once and cached", async () => {

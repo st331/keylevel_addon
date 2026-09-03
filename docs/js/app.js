@@ -287,8 +287,10 @@ async function lookup(ev) {
         windowed[role] = windowLevels(p, level, LEVEL_WINDOW);
       }
       // default view: the lead role — unless the key-level window emptied
-      // its table while another role still has visible runs
-      const selected = pickSelectedRole(order, windowed);
+      // its table while another role still has visible runs. A role the
+      // user picked by hand survives the next paste.
+      const picked = chosenRole.get(k);
+      const selected = (picked && windowed[picked]) ? picked : pickSelectedRole(order, windowed);
       return {
         fullName: c.full,
         key: k,
@@ -328,6 +330,10 @@ async function lookup(ev) {
 // last successful lookup, kept so role-chip clicks can re-render without
 // refetching (all roles' tables are already built)
 let lastRender = null;
+
+// a role the user picked by clicking a chip, kept across re-lookups so a
+// fresh paste doesn't undo their choice mid-vetting
+const chosenRole = new Map(); // entry key -> role
 
 function renderResults() {
   if (!lastRender) return;
@@ -375,9 +381,58 @@ function wireRoleChips() {
       if (!player) return;
       entry.selected = btn.dataset.role;
       entry.player = player;
+      chosenRole.set(btn.dataset.key, btn.dataset.role);
       renderResults();
     });
   }
+}
+
+// ------------------------------------------------------- auto-lookup
+//
+// Under a live applicant wave the roster changes every few seconds, so
+// pasting the new list should be the ONLY action: the lookup runs itself.
+// Cached characters cost no request, so a re-paste of the whole list only
+// fetches whoever is new.
+
+const PASTE_DELAY = 150;   // a paste is a finished thought — go almost at once
+const TYPING_DELAY = 900;  // typing isn't; wait for a half-written name to finish
+
+let autoTimer = null;
+let running = false;
+let rerunQueued = false;
+let lastSignature = null;
+
+// What the current textarea resolves to, so we can skip a lookup that would
+// ask for exactly what's already on screen.
+function rosterSignature() {
+  const region = $("region").value;
+  return dedupeEntries(parseEntriesInput($("names").value), region)
+    .map((e) => `${e.full}@${e.region ?? region}`)
+    .join(",");
+}
+
+// One lookup at a time. A paste that lands mid-flight is never dropped — it
+// re-runs as soon as the current pass finishes.
+async function runLookup(ev) {
+  if (running) { rerunQueued = true; return; }
+  running = true;
+  try {
+    lastSignature = rosterSignature();
+    await lookup(ev);
+  } finally {
+    running = false;
+    if (rerunQueued) { rerunQueued = false; scheduleLookup(0); }
+  }
+}
+
+function scheduleLookup(delay) {
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(() => {
+    // nothing new resolved (still mid-word, or the same roster re-pasted)
+    if (rosterSignature() === lastSignature) return;
+    if (!rosterSignature()) return;
+    runLookup();
+  }, delay);
 }
 
 // ---------------------------------------------------------------- init
@@ -417,13 +472,25 @@ async function prefetchDungeons() {
 }
 
 export function init() {
-  $("lookup").addEventListener("click", lookup);
+  $("lookup").addEventListener("click", (e) => runLookup(e)); // keeps Shift = fresh data
   // an explicit fresh-data control: Shift-click doesn't exist on touch
   // devices, and share-link visits auto-run before you could hold Shift
-  $("refresh").addEventListener("click", () => lookup({ shiftKey: true }));
+  $("refresh").addEventListener("click", () => runLookup({ shiftKey: true }));
   $("names").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) lookup(e);
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) runLookup(e);
   });
+
+  // pasting the roster IS the action — no click needed
+  $("names").addEventListener("paste", () => scheduleLookup(PASTE_DELAY));
+  $("names").addEventListener("input", (e) => {
+    // a paste fires input too; don't downgrade it to the typing delay
+    if (e.inputType && e.inputType.startsWith("insertFromPaste")) return;
+    scheduleLookup(TYPING_DELAY);
+  });
+  // changing the key level or dungeon re-judges everyone already loaded
+  for (const id of ["level", "dungeon", "region"]) {
+    $(id).addEventListener("change", () => { lastSignature = null; scheduleLookup(PASTE_DELAY); });
+  }
 
   const hasChars = initFromParams();
   if (!embeddedCredentials()) {
@@ -431,7 +498,7 @@ export function init() {
     return;
   }
   if (hasChars) {
-    lookup(); // arrived via the addon's Copy URL: run immediately
+    runLookup(); // arrived via the addon's Copy URL: run immediately
   } else {
     prefetchDungeons();
   }
