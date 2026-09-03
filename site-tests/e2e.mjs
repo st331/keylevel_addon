@@ -147,7 +147,7 @@ function characterResponse(query) {
         ] },
         [`e${PIT}`]: { ranks: [{ historicalPercent: 99.4, rankPercent: 99.4, todayPercent: 97.0, bracketData: 14, amount: 990_000, spec: "Fire" }] },
       };
-    } else if (slug === "area52" && /^(Newguy|Racer\d)$/.test(name) && !isHps) {
+    } else if (slug === "area52" && /^(Newguy|Racer\d|Retry\d)$/.test(name) && !isHps) {
       // stand-ins for the applicants that stream in while you are vetting
       out[alias] = {
         classID: 3,
@@ -627,6 +627,55 @@ try {
         null, { timeout: 10_000 });
       assert.match(await page.locator('tr.row[data-key="Switcher-Area52@us"]').innerHTML(),
         /role-tank sel/, "still tank after the roster grew — choice not clobbered");
+    });
+
+    await check("Ctrl+V anywhere on the page replaces the roster and looks it up", async () => {
+      // no click into the textarea, no Ctrl+A — the whole page accepts the paste
+      await page.evaluate(() => {
+        document.querySelector("#status").textContent = "";
+        document.querySelector("#names").blur();
+        const dt = new DataTransfer();
+        dt.setData("text", "Foo-Area52\nRacer3-Area52");
+        document.body.dispatchEvent(new ClipboardEvent("paste", {
+          bubbles: true, cancelable: true, clipboardData: dt,
+        }));
+      });
+      await page.waitForFunction(
+        () => document.querySelector("#status")?.textContent?.startsWith("done"),
+        null, { timeout: 10_000 });
+      assert.equal(await page.inputValue("#names"), "Foo-Area52\nRacer3-Area52",
+        "roster replaced, not appended");
+      const names = await page.locator("tr.row .charname").allInnerTexts();
+      assert.ok(names.some((n) => n.includes("Racer3")), "and it was looked up");
+    });
+
+    await check("a failed lookup does not block re-pasting the same roster", async () => {
+      // the signature guard must record only SUCCESSFUL lookups, or one blip
+      // leaves you unable to retry by re-pasting the same roster
+      const paste = (text) => page.evaluate((t) => {
+        document.querySelector("#status").textContent = "";
+        document.querySelector("#names").blur();
+        const dt = new DataTransfer();
+        dt.setData("text", t);
+        document.body.dispatchEvent(new ClipboardEvent("paste", {
+          bubbles: true, cancelable: true, clipboardData: dt,
+        }));
+      }, text);
+
+      const good = await page.evaluate(() => localStorage.getItem("kllApiUrl"));
+      // API unreachable (endpoints() re-reads localStorage on every call)
+      await page.evaluate(() => localStorage.setItem("kllApiUrl", "http://127.0.0.1:1/gql"));
+      await paste("Foo-Area52\nRetry1-Area52");
+      await page.waitForFunction(
+        () => document.querySelector(".status.error") !== null, null, { timeout: 10_000 });
+
+      await page.evaluate((u) => localStorage.setItem("kllApiUrl", u), good); // back up
+      await paste("Foo-Area52\nRetry1-Area52");                              // same roster
+      await page.waitForFunction(
+        () => document.querySelector("#status")?.textContent?.startsWith("done"),
+        null, { timeout: 10_000 });
+      const names = await page.locator("tr.row .charname").allInnerTexts();
+      assert.ok(names.some((n) => n.includes("Retry1")), "retry of the identical roster works");
     });
 
     await check("token fetched once and cached", async () => {

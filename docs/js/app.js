@@ -318,9 +318,13 @@ async function lookup(ev) {
 
     const windowNote = level ? ` · showing keys +${Math.max(2, level - LEVEL_WINDOW)}–+${level + LEVEL_WINDOW}` : "";
     setStatus(`done — ${entries.length} character(s) · ${zone.name}${windowNote} · click a row for details`);
+    return true;
   } catch (e) {
-    if (e instanceof WclError) setStatus(e.message, true);
-    else { setStatus("unexpected error: " + e.message, true); throw e; }
+    // a handled error still returns false: the caller must know this roster
+    // was NOT successfully looked up, or re-pasting it would be skipped
+    if (e instanceof WclError) { setStatus(e.message, true); return false; }
+    setStatus("unexpected error: " + e.message, true);
+    throw e;
   } finally {
     $("lookup").disabled = false;
     $("refresh").disabled = false;
@@ -416,9 +420,12 @@ function rosterSignature() {
 async function runLookup(ev) {
   if (running) { rerunQueued = true; return; }
   running = true;
+  const attempted = rosterSignature();
   try {
-    lastSignature = rosterSignature();
-    await lookup(ev);
+    // only remember the roster once it actually worked — lookup() handles
+    // its own errors and resolves either way, so a FAILED lookup (dropped
+    // wifi, API blip) must not make re-pasting the same roster a no-op
+    if (await lookup(ev)) lastSignature = attempted;
   } finally {
     running = false;
     if (rerunQueued) { rerunQueued = false; scheduleLookup(0); }
@@ -482,6 +489,20 @@ export function init() {
 
   // pasting the roster IS the action — no click needed
   $("names").addEventListener("paste", () => scheduleLookup(PASTE_DELAY));
+
+  // ...and you don't even have to click into the box first: Ctrl+V anywhere
+  // on the page replaces the roster and looks it up. This uses the paste
+  // EVENT's own clipboardData, which needs no permission in any browser —
+  // unlike navigator.clipboard.readText(), which is Chrome/Edge-only behind
+  // a prompt. Saves a click and a Ctrl+A on every single wave.
+  document.addEventListener("paste", (e) => {
+    if (e.target?.closest?.("input, textarea")) return; // normal editing
+    const text = e.clipboardData?.getData("text");
+    if (!text || !text.trim()) return;
+    e.preventDefault();
+    $("names").value = text;
+    scheduleLookup(PASTE_DELAY);
+  });
   $("names").addEventListener("input", (e) => {
     // a paste fires input too; don't downgrade it to the typing delay
     if (e.inputType && e.inputType.startsWith("insertFromPaste")) return;
