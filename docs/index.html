@@ -39,12 +39,15 @@
     <div class="names-box">
       <label for="names">Applicants — <code>Name-Realm</code> or a Raider.IO / Armory / Warcraft Logs
         character link, one per line
-        <span class="label-hint">(paste and it looks up straight away — only the names it hasn’t
-        seen cost a request, so re-pasting a growing roster is cheap)</span></label>
+        <span class="label-hint">(Ctrl+V anywhere on the page looks them up straight away — only names
+        it hasn’t seen cost a request. With <em>Auto-paste</em> on, just switching back to this tab
+        is enough; it only ever acts on text that is entirely characters, never anything else you
+        copied.)</span></label>
       <textarea id="names" rows="4" spellcheck="false" placeholder="Playerone-Area52&#10;https://raider.io/characters/us/area-52/Playertwo&#10;https://worldofwarcraft.blizzard.com/en-us/character/us/area-52/playerthree"></textarea>
       <div class="actions">
         <button id="lookup" title="Pasting already runs the lookup — this is here for a re-run. Results are cached for an hour; Shift-click for fresh data">Look up</button>
         <button id="refresh" class="ghost" title="Re-fetch everyone now, ignoring the hour cache">⟳ Fresh data</button>
+        <button id="autopaste" class="ghost" type="button">⧉ Auto-paste off</button>
       </div>
     </div>
   </section>

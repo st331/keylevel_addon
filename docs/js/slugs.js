@@ -94,6 +94,32 @@ export function parseEntriesInput(text) {
   return out;
 }
 
+// Does this clipboard text look like an applicant roster, and nothing else?
+//
+// Guard for auto-ingesting the clipboard: with clipboard-read granted the
+// page sees EVERY copy — passwords, chat, links — so it must act only on
+// text that is unmistakably a roster. The discriminator is that WoW
+// character names are letters only and capitalised, so "hunter2-mypassword"
+// and "well-known" are not names. Anything with a single unparseable token
+// mixed in is rejected outright rather than partially used.
+const ROSTER_NAME = /^\p{Lu}[\p{L}]{1,11}$/u;              // Foo, Ñightblade
+const ROSTER_REALM = /^\p{Lu}[\p{L}\p{N}]*(?:-[\p{L}\p{N}]+)*$/u; // Area52, Azjol-Nerub
+
+export function looksLikeRoster(text) {
+  if (typeof text !== "string" || text.length > 8000) return false;
+  const tokens = text.split(/[\s,;]+/).filter(Boolean);
+  if (tokens.length === 0 || tokens.length > 200) return false;
+  for (const token of tokens) {
+    if (parseCharacterURL(token)) continue;      // a character link is unambiguous
+    if (token.length > 64 || token.includes("/")) return false;
+    const parsed = parseFullName(token);
+    if (!parsed) return false;
+    if (!ROSTER_NAME.test(parsed.name)) return false;
+    if (!ROSTER_REALM.test(parsed.realm)) return false;
+  }
+  return true;
+}
+
 // Drop entries that resolve to the same character once the default region
 // is known: a typed "Foo-Area52" and a pasted URL for the same character
 // carry different region hints at parse time (none vs explicit), so

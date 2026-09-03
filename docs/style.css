@@ -71,6 +71,7 @@ button.ghost{
   border:1px solid var(--grid); padding:.5rem 1rem;
 }
 button.ghost:hover{ color:var(--ink); border-color:var(--muted); filter:none }
+button.ghost.on{ color:var(--gold); border-color:var(--gold) }
 
 /* ---------------- status ---------------- */
 .status{ min-height:24px; color:var(--muted); font-size:.85rem; margin:14px 2px }
