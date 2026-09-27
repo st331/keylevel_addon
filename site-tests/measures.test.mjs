@@ -168,7 +168,7 @@ test("the allowance: one-off deaths are free, repetition is not", () => {
   const b = deathAllowance(bad);
   assert.equal(b.loss01, 1);
   assert.equal(b.repeated, true);
-  assert.deepEqual(b.sameCause, [1306890], "same killing ability twice");
+  assert.deepEqual(b.sameCause, [1306890], "same killing ability twice is recorded (not flagged)");
   // five chain deaths in five runs never move the score
   assert.equal(deathAllowance(Array.from({ length: 5 }, () => ({ deaths: [chain] }))).loss01, 0);
   // per-run cap: a five-death run costs at most 2
@@ -262,6 +262,7 @@ test("assess: six runs of the warrior — damage from Key % without baselines, d
   assert.equal(a.measures.deaths.loss01, 1, "a solo death every run");
   assert.equal(a.measures.deaths.z, -2);
   assert.ok(a.flags.some((f) => f.kind === "deaths" && /repeated/.test(f.text)));
+  assert.ok(!a.flags.some((f) => /same ability/.test(f.text)), "the same killing ability twice is not a flag");
   assert.ok(a.flags.some((f) => f.kind === "recurring"), "the same four teammates six times");
   assert.equal(a.measures.kicks.mode, "utilisation");
   assert.ok(a.measures.kicks.z !== null);
