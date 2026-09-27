@@ -258,6 +258,7 @@ function reportResponse(query) {
 
 // --- fake wowlogs (baselines + run store) -----------------------------------
 // FITRUN1 is in the store (never pulled from WCL again); the rest are not.
+const shardHex = (code) => { let h = 0; for (let i = 0; i < 4; i++) h = (h * 31 + code.charCodeAt(i)) % 256; return h.toString(16).padStart(2, "0"); };
 function startFakeWowlogs() {
   const state = { requests: [] };
   const q = [5, 10, 25, 50, 75, 90, 95];
@@ -288,7 +289,7 @@ function startFakeWowlogs() {
     res.setHeader("access-control-allow-origin", "*");
     res.setHeader("content-type", "application/json");
     if (url.pathname === "/baselines.json.gz") { res.end(JSON.stringify(baselines)); return; }
-    if (url.pathname === "/runs/F.json.gz") { res.end(JSON.stringify(stored)); return; }
+    if (url.pathname === `/runs/${shardHex("FITRUN1")}.json.gz`) { res.end(JSON.stringify(stored)); return; }
     res.writeHead(404); res.end("{}");
   });
   return new Promise((r) => server.listen(0, "127.0.0.1", () => r({ server, state, port: server.address().port })));
@@ -871,7 +872,7 @@ try {
     });
 
     await check("key fit: the run already in the wowlogs store was not pulled again; absent runs were; the fresh run got events only", async () => {
-      assert.ok(wowlogs.state.requests.includes("/runs/F.json.gz"), "the store shard was consulted");
+      assert.ok(wowlogs.state.requests.includes(`/runs/${shardHex("FITRUN1")}.json.gz`), "the store shard was consulted");
       assert.ok(wowlogs.state.requests.includes("/baselines.json.gz"), "the baselines were fetched");
       const stored = blocksFor("FITRUN1");
       assert.ok(stored.length >= 1, "events were pulled for the stored run (only this site needs them)");

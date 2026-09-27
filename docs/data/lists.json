@@ -1,6 +1,7 @@
 {
- "version": "12.1-provisional",
- "generated": "2026-09-27T07:48:04.954Z",
+ "version": "12.1",
+ "generated": "2026-09-27T08:28:14Z",
+ "notes": "Spec kits written from game knowledge; every id validated by name via gameData.ability on 2026-09-27. Dungeon lists seeded from 4 sampled runs per dungeon (keys 12-20, last 10 days): avoidable = Environment-sourced or high per-player dispersion (cv >= 0.4) and not tank-concentrated (max player share < 0.8); dangerous = kicked >= 50% of the time by the population with >= 8 casts seen; filler = the rest. Re-seed each patch. Excluded from avoidable: melee, any interruptible cast (that is a kick failure), and targeted projectiles (bolts/shots). Lists carry confidence \"seeded\": replace with hand-curated ids as you learn the season.",
  "consumables": {
   "healthstone": 6262,
   "healing_potion": [
@@ -11,7 +12,93 @@
    1236616
   ]
  },
- "dispel": {},
+ "dispel": {
+  "Priest": {
+   "types": [
+    "Magic",
+    "Disease"
+   ],
+   "ids": [
+    527,
+    213634
+   ]
+  },
+  "Paladin": {
+   "types": [
+    "Magic",
+    "Poison",
+    "Disease"
+   ],
+   "ids": [
+    4987,
+    213644
+   ]
+  },
+  "Shaman": {
+   "types": [
+    "Magic",
+    "Curse",
+    "Poison"
+   ],
+   "ids": [
+    77130,
+    51886,
+    383013
+   ]
+  },
+  "Druid": {
+   "types": [
+    "Magic",
+    "Curse",
+    "Poison"
+   ],
+   "ids": [
+    88423,
+    2782
+   ]
+  },
+  "Monk": {
+   "types": [
+    "Magic",
+    "Poison",
+    "Disease"
+   ],
+   "ids": [
+    115450,
+    218164
+   ]
+  },
+  "Mage": {
+   "types": [
+    "Curse"
+   ],
+   "ids": [
+    475
+   ]
+  },
+  "Evoker": {
+   "types": [
+    "Magic",
+    "Poison",
+    "Curse",
+    "Disease",
+    "Bleed"
+   ],
+   "ids": [
+    360823,
+    365585,
+    374251
+   ]
+  },
+  "Warlock": {
+   "types": [
+    "Magic"
+   ],
+   "ids": [
+    89808
+   ]
+  }
+ },
  "specs": {
   "Warrior-Arms": {
    "role": "dps",
@@ -47,17 +134,627 @@
      "name": "Defensive Stance",
      "cd": 3,
      "kind": "minor",
-     "baseline": true
+     "baseline": false
+    },
+    {
+     "id": 383762,
+     "name": "Bitter Immunity",
+     "cd": 180,
+     "kind": "minor",
+     "baseline": false
     }
    ],
    "selfheals": [
     {
      "id": 202168,
      "name": "Impending Victory",
-     "cd": 30
+     "cd": 30,
+     "baseline": false
     }
    ],
-   "cc": [],
+   "cc": [
+    {
+     "id": 107570,
+     "name": "Storm Bolt",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 46968,
+     "name": "Shockwave",
+     "cd": 40,
+     "pull_utility": false
+    },
+    {
+     "id": 5246,
+     "name": "Intimidating Shout",
+     "cd": 90,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Warrior-Fury": {
+   "role": "dps",
+   "kick": {
+    "id": 6552,
+    "name": "Pummel",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 184364,
+     "name": "Enraged Regeneration",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 23920,
+     "name": "Spell Reflection",
+     "cd": 25,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 97462,
+     "name": "Rallying Cry",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 386208,
+     "name": "Defensive Stance",
+     "cd": 3,
+     "kind": "minor",
+     "baseline": false
+    },
+    {
+     "id": 383762,
+     "name": "Bitter Immunity",
+     "cd": 180,
+     "kind": "minor",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 202168,
+     "name": "Impending Victory",
+     "cd": 30,
+     "baseline": false
+    }
+   ],
+   "cc": [
+    {
+     "id": 107570,
+     "name": "Storm Bolt",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 46968,
+     "name": "Shockwave",
+     "cd": 40,
+     "pull_utility": false
+    },
+    {
+     "id": 5246,
+     "name": "Intimidating Shout",
+     "cd": 90,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Warrior-Protection": {
+   "role": "tank",
+   "kick": {
+    "id": 6552,
+    "name": "Pummel",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 871,
+     "name": "Shield Wall",
+     "cd": 240,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 12975,
+     "name": "Last Stand",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 23920,
+     "name": "Spell Reflection",
+     "cd": 25,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 97462,
+     "name": "Rallying Cry",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 383762,
+     "name": "Bitter Immunity",
+     "cd": 180,
+     "kind": "minor",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 202168,
+     "name": "Impending Victory",
+     "cd": 30,
+     "baseline": false
+    }
+   ],
+   "cc": [
+    {
+     "id": 46968,
+     "name": "Shockwave",
+     "cd": 40,
+     "pull_utility": false
+    },
+    {
+     "id": 107570,
+     "name": "Storm Bolt",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 5246,
+     "name": "Intimidating Shout",
+     "cd": 90,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": [
+    {
+     "id": 2565,
+     "name": "Shield Block",
+     "buff_id": 132404
+    },
+    {
+     "id": 190456,
+     "name": "Ignore Pain",
+     "buff_id": 190456
+    }
+   ]
+  },
+  "Paladin-Holy": {
+   "role": "healer",
+   "kick": {
+    "id": 96231,
+    "name": "Rebuke",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 642,
+     "name": "Divine Shield",
+     "cd": 300,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 498,
+     "name": "Divine Protection",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 1022,
+     "name": "Blessing of Protection",
+     "cd": 300,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 31821,
+     "name": "Aura Mastery",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 633,
+     "name": "Lay on Hands",
+     "cd": 600,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 853,
+     "name": "Hammer of Justice",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 115750,
+     "name": "Blinding Light",
+     "cd": 90,
+     "pull_utility": false
+    },
+    {
+     "id": 20066,
+     "name": "Repentance",
+     "cd": 15,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Paladin-Protection": {
+   "role": "tank",
+   "kick": {
+    "id": 96231,
+    "name": "Rebuke",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 31850,
+     "name": "Ardent Defender",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 86659,
+     "name": "Guardian of Ancient Kings",
+     "cd": 300,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 642,
+     "name": "Divine Shield",
+     "cd": 300,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 204018,
+     "name": "Blessing of Spellwarding",
+     "cd": 300,
+     "kind": "immunity",
+     "baseline": false
+    },
+    {
+     "id": 498,
+     "name": "Divine Protection",
+     "cd": 60,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 633,
+     "name": "Lay on Hands",
+     "cd": 600,
+     "baseline": true
+    },
+    {
+     "id": 85673,
+     "name": "Word of Glory",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 853,
+     "name": "Hammer of Justice",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 115750,
+     "name": "Blinding Light",
+     "cd": 90,
+     "pull_utility": false
+    },
+    {
+     "id": 31935,
+     "name": "Avenger's Shield",
+     "cd": 15,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": [
+    {
+     "id": 53600,
+     "name": "Shield of the Righteous",
+     "buff_id": 132403
+    }
+   ]
+  },
+  "Paladin-Retribution": {
+   "role": "dps",
+   "kick": {
+    "id": 96231,
+    "name": "Rebuke",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 642,
+     "name": "Divine Shield",
+     "cd": 300,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 184662,
+     "name": "Shield of Vengeance",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 498,
+     "name": "Divine Protection",
+     "cd": 60,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 1022,
+     "name": "Blessing of Protection",
+     "cd": 300,
+     "kind": "immunity",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 633,
+     "name": "Lay on Hands",
+     "cd": 600,
+     "baseline": true
+    },
+    {
+     "id": 85673,
+     "name": "Word of Glory",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 853,
+     "name": "Hammer of Justice",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 115750,
+     "name": "Blinding Light",
+     "cd": 90,
+     "pull_utility": false
+    },
+    {
+     "id": 20066,
+     "name": "Repentance",
+     "cd": 15,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Hunter-BeastMastery": {
+   "role": "dps",
+   "kick": {
+    "id": 147362,
+    "name": "Counter Shot",
+    "cd": 24
+   },
+   "defensives": [
+    {
+     "id": 186265,
+     "name": "Aspect of the Turtle",
+     "cd": 180,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 264735,
+     "name": "Survival of the Fittest",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 388035,
+     "name": "Fortitude of the Bear",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 109304,
+     "name": "Exhilaration",
+     "cd": 120,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 19577,
+     "name": "Intimidation",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 109248,
+     "name": "Binding Shot",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 213691,
+     "name": "Scatter Shot",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 187650,
+     "name": "Freezing Trap",
+     "cd": 30,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Hunter-Marksmanship": {
+   "role": "dps",
+   "kick": {
+    "id": 147362,
+    "name": "Counter Shot",
+    "cd": 24
+   },
+   "defensives": [
+    {
+     "id": 186265,
+     "name": "Aspect of the Turtle",
+     "cd": 180,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 264735,
+     "name": "Survival of the Fittest",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 388035,
+     "name": "Fortitude of the Bear",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 109304,
+     "name": "Exhilaration",
+     "cd": 120,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 109248,
+     "name": "Binding Shot",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 213691,
+     "name": "Scatter Shot",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 186387,
+     "name": "Bursting Shot",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 187650,
+     "name": "Freezing Trap",
+     "cd": 30,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Hunter-Survival": {
+   "role": "dps",
+   "kick": {
+    "id": 187707,
+    "name": "Muzzle",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 186265,
+     "name": "Aspect of the Turtle",
+     "cd": 180,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 264735,
+     "name": "Survival of the Fittest",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 388035,
+     "name": "Fortitude of the Bear",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 109304,
+     "name": "Exhilaration",
+     "cd": 120,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 19577,
+     "name": "Intimidation",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 109248,
+     "name": "Binding Shot",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 187650,
+     "name": "Freezing Trap",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 213691,
+     "name": "Scatter Shot",
+     "cd": 30,
+     "pull_utility": false
+    }
+   ],
    "active_mitigation": []
   },
   "Rogue-Assassination": {
@@ -69,17 +766,17 @@
    },
    "defensives": [
     {
-     "id": 5277,
-     "name": "Evasion",
-     "cd": 120,
-     "kind": "major",
-     "baseline": true
-    },
-    {
      "id": 31224,
      "name": "Cloak of Shadows",
      "cd": 120,
      "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 5277,
+     "name": "Evasion",
+     "cd": 120,
+     "kind": "major",
      "baseline": true
     },
     {
@@ -94,63 +791,326 @@
     {
      "id": 185311,
      "name": "Crimson Vial",
-     "cd": 30
+     "cd": 30,
+     "baseline": true
     }
    ],
-   "cc": [],
+   "cc": [
+    {
+     "id": 408,
+     "name": "Kidney Shot",
+     "cd": 20,
+     "pull_utility": false
+    },
+    {
+     "id": 1833,
+     "name": "Cheap Shot",
+     "cd": 0,
+     "pull_utility": false
+    },
+    {
+     "id": 2094,
+     "name": "Blind",
+     "cd": 120,
+     "pull_utility": false
+    },
+    {
+     "id": 1776,
+     "name": "Gouge",
+     "cd": 20,
+     "pull_utility": false
+    }
+   ],
    "active_mitigation": []
   },
-  "Hunter-Marksmanship": {
+  "Rogue-Outlaw": {
    "role": "dps",
    "kick": {
-    "id": 147362,
-    "name": "Counter Shot",
-    "cd": 24
+    "id": 1766,
+    "name": "Kick",
+    "cd": 15
    },
    "defensives": [
     {
-     "id": 264735,
-     "name": "Survival of the Fittest",
+     "id": 31224,
+     "name": "Cloak of Shadows",
+     "cd": 120,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 5277,
+     "name": "Evasion",
      "cd": 120,
      "kind": "major",
      "baseline": true
     },
     {
-     "id": 186265,
-     "name": "Aspect of the Turtle",
-     "cd": 180,
-     "kind": "immunity",
+     "id": 1966,
+     "name": "Feint",
+     "cd": 15,
+     "kind": "minor",
      "baseline": true
     }
    ],
    "selfheals": [
     {
-     "id": 109304,
-     "name": "Exhilaration",
-     "cd": 120
+     "id": 185311,
+     "name": "Crimson Vial",
+     "cd": 30,
+     "baseline": true
     }
    ],
-   "cc": [],
+   "cc": [
+    {
+     "id": 315341,
+     "name": "Between the Eyes",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 408,
+     "name": "Kidney Shot",
+     "cd": 20,
+     "pull_utility": false
+    },
+    {
+     "id": 1833,
+     "name": "Cheap Shot",
+     "cd": 0,
+     "pull_utility": false
+    },
+    {
+     "id": 2094,
+     "name": "Blind",
+     "cd": 120,
+     "pull_utility": false
+    },
+    {
+     "id": 1776,
+     "name": "Gouge",
+     "cd": 20,
+     "pull_utility": false
+    }
+   ],
    "active_mitigation": []
   },
-  "Shaman-Restoration": {
-   "role": "healer",
+  "Rogue-Subtlety": {
+   "role": "dps",
    "kick": {
-    "id": 57994,
-    "name": "Wind Shear",
-    "cd": 12
+    "id": 1766,
+    "name": "Kick",
+    "cd": 15
    },
    "defensives": [
     {
-     "id": 108271,
-     "name": "Astral Shift",
+     "id": 31224,
+     "name": "Cloak of Shadows",
      "cd": 120,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 5277,
+     "name": "Evasion",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 1966,
+     "name": "Feint",
+     "cd": 15,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 185311,
+     "name": "Crimson Vial",
+     "cd": 30,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 408,
+     "name": "Kidney Shot",
+     "cd": 20,
+     "pull_utility": false
+    },
+    {
+     "id": 1833,
+     "name": "Cheap Shot",
+     "cd": 0,
+     "pull_utility": false
+    },
+    {
+     "id": 2094,
+     "name": "Blind",
+     "cd": 120,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Priest-Discipline": {
+   "role": "healer",
+   "kick": null,
+   "defensives": [
+    {
+     "id": 19236,
+     "name": "Desperate Prayer",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 586,
+     "name": "Fade",
+     "cd": 30,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 33206,
+     "name": "Pain Suppression",
+     "cd": 180,
      "kind": "major",
      "baseline": true
     }
    ],
    "selfheals": [],
-   "cc": [],
+   "cc": [
+    {
+     "id": 8122,
+     "name": "Psychic Scream",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 204263,
+     "name": "Shining Force",
+     "cd": 45,
+     "pull_utility": true
+    },
+    {
+     "id": 108920,
+     "name": "Void Tendrils",
+     "cd": 30,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Priest-Holy": {
+   "role": "healer",
+   "kick": null,
+   "defensives": [
+    {
+     "id": 19236,
+     "name": "Desperate Prayer",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 586,
+     "name": "Fade",
+     "cd": 30,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 47788,
+     "name": "Guardian Spirit",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    }
+   ],
+   "selfheals": [],
+   "cc": [
+    {
+     "id": 8122,
+     "name": "Psychic Scream",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 88625,
+     "name": "Holy Word: Chastise",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 204263,
+     "name": "Shining Force",
+     "cd": 45,
+     "pull_utility": true
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Priest-Shadow": {
+   "role": "dps",
+   "kick": {
+    "id": 15487,
+    "name": "Silence",
+    "cd": 45
+   },
+   "defensives": [
+    {
+     "id": 47585,
+     "name": "Dispersion",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 586,
+     "name": "Fade",
+     "cd": 30,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 19236,
+     "name": "Desperate Prayer",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 15286,
+     "name": "Vampiric Embrace",
+     "cd": 120,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 8122,
+     "name": "Psychic Scream",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 64044,
+     "name": "Psychic Horror",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 108920,
+     "name": "Void Tendrils",
+     "cd": 30,
+     "pull_utility": false
+    }
+   ],
    "active_mitigation": []
   },
   "DeathKnight-Blood": {
@@ -181,16 +1141,70 @@
      "cd": 90,
      "kind": "major",
      "baseline": true
+    },
+    {
+     "id": 49028,
+     "name": "Dancing Rune Weapon",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 194679,
+     "name": "Rune Tap",
+     "cd": 25,
+     "kind": "minor",
+     "baseline": false
+    },
+    {
+     "id": 49039,
+     "name": "Lichborne",
+     "cd": 120,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 51052,
+     "name": "Anti-Magic Zone",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
     }
    ],
    "selfheals": [
     {
      "id": 48743,
      "name": "Death Pact",
-     "cd": 120
+     "cd": 120,
+     "baseline": false
     }
    ],
-   "cc": [],
+   "cc": [
+    {
+     "id": 221562,
+     "name": "Asphyxiate",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 108199,
+     "name": "Gorefiend's Grasp",
+     "cd": 120,
+     "pull_utility": true
+    },
+    {
+     "id": 49576,
+     "name": "Death Grip",
+     "cd": 25,
+     "pull_utility": true
+    },
+    {
+     "id": 207167,
+     "name": "Blinding Sleet",
+     "cd": 60,
+     "pull_utility": false
+    }
+   ],
    "active_mitigation": [
     {
      "id": 195181,
@@ -198,7 +1212,2807 @@
      "buff_id": 195181
     }
    ]
+  },
+  "DeathKnight-Frost": {
+   "role": "dps",
+   "kick": {
+    "id": 47528,
+    "name": "Mind Freeze",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 48792,
+     "name": "Icebound Fortitude",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 48707,
+     "name": "Anti-Magic Shell",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 49039,
+     "name": "Lichborne",
+     "cd": 120,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 51052,
+     "name": "Anti-Magic Zone",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 49998,
+     "name": "Death Strike",
+     "cd": 0,
+     "baseline": true
+    },
+    {
+     "id": 48743,
+     "name": "Death Pact",
+     "cd": 120,
+     "baseline": false
+    }
+   ],
+   "cc": [
+    {
+     "id": 221562,
+     "name": "Asphyxiate",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 207167,
+     "name": "Blinding Sleet",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 49576,
+     "name": "Death Grip",
+     "cd": 25,
+     "pull_utility": true
+    }
+   ],
+   "active_mitigation": []
+  },
+  "DeathKnight-Unholy": {
+   "role": "dps",
+   "kick": {
+    "id": 47528,
+    "name": "Mind Freeze",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 48792,
+     "name": "Icebound Fortitude",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 48707,
+     "name": "Anti-Magic Shell",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 49039,
+     "name": "Lichborne",
+     "cd": 120,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 51052,
+     "name": "Anti-Magic Zone",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 49998,
+     "name": "Death Strike",
+     "cd": 0,
+     "baseline": true
+    },
+    {
+     "id": 48743,
+     "name": "Death Pact",
+     "cd": 120,
+     "baseline": false
+    }
+   ],
+   "cc": [
+    {
+     "id": 221562,
+     "name": "Asphyxiate",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 207167,
+     "name": "Blinding Sleet",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 49576,
+     "name": "Death Grip",
+     "cd": 25,
+     "pull_utility": true
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Shaman-Elemental": {
+   "role": "dps",
+   "kick": {
+    "id": 57994,
+    "name": "Wind Shear",
+    "cd": 12
+   },
+   "defensives": [
+    {
+     "id": 108271,
+     "name": "Astral Shift",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 108270,
+     "name": "Stone Bulwark Totem",
+     "cd": 180,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 198103,
+     "name": "Earth Elemental",
+     "cd": 300,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 8004,
+     "name": "Healing Surge",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 192058,
+     "name": "Capacitor Totem",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 51490,
+     "name": "Thunderstorm",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 51514,
+     "name": "Hex",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 305483,
+     "name": "Lightning Lasso",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 51485,
+     "name": "Earthgrab Totem",
+     "cd": 30,
+     "pull_utility": true
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Shaman-Enhancement": {
+   "role": "dps",
+   "kick": {
+    "id": 57994,
+    "name": "Wind Shear",
+    "cd": 12
+   },
+   "defensives": [
+    {
+     "id": 108271,
+     "name": "Astral Shift",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 108270,
+     "name": "Stone Bulwark Totem",
+     "cd": 180,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 198103,
+     "name": "Earth Elemental",
+     "cd": 300,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 8004,
+     "name": "Healing Surge",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 192058,
+     "name": "Capacitor Totem",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 51514,
+     "name": "Hex",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 197214,
+     "name": "Sundering",
+     "cd": 40,
+     "pull_utility": false
+    },
+    {
+     "id": 51490,
+     "name": "Thunderstorm",
+     "cd": 30,
+     "pull_utility": true
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Shaman-Restoration": {
+   "role": "healer",
+   "kick": {
+    "id": 57994,
+    "name": "Wind Shear",
+    "cd": 12
+   },
+   "defensives": [
+    {
+     "id": 108271,
+     "name": "Astral Shift",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 108270,
+     "name": "Stone Bulwark Totem",
+     "cd": 180,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 198103,
+     "name": "Earth Elemental",
+     "cd": 300,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 98008,
+     "name": "Spirit Link Totem",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 108280,
+     "name": "Healing Tide Totem",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 378081,
+     "name": "Nature's Swiftness",
+     "cd": 60,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 192058,
+     "name": "Capacitor Totem",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 51514,
+     "name": "Hex",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 51490,
+     "name": "Thunderstorm",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 51485,
+     "name": "Earthgrab Totem",
+     "cd": 30,
+     "pull_utility": true
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Mage-Arcane": {
+   "role": "dps",
+   "kick": {
+    "id": 2139,
+    "name": "Counterspell",
+    "cd": 24
+   },
+   "defensives": [
+    {
+     "id": 45438,
+     "name": "Ice Block",
+     "cd": 240,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 235450,
+     "name": "Prismatic Barrier",
+     "cd": 25,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 342245,
+     "name": "Alter Time",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 55342,
+     "name": "Mirror Image",
+     "cd": 120,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 110959,
+     "name": "Greater Invisibility",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 414660,
+     "name": "Mass Barrier",
+     "cd": 180,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [],
+   "cc": [
+    {
+     "id": 113724,
+     "name": "Ring of Frost",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 157981,
+     "name": "Blast Wave",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 122,
+     "name": "Frost Nova",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 118,
+     "name": "Polymorph",
+     "cd": 0,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Mage-Fire": {
+   "role": "dps",
+   "kick": {
+    "id": 2139,
+    "name": "Counterspell",
+    "cd": 24
+   },
+   "defensives": [
+    {
+     "id": 45438,
+     "name": "Ice Block",
+     "cd": 240,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 235313,
+     "name": "Blazing Barrier",
+     "cd": 25,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 342245,
+     "name": "Alter Time",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 55342,
+     "name": "Mirror Image",
+     "cd": 120,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 110959,
+     "name": "Greater Invisibility",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [],
+   "cc": [
+    {
+     "id": 31661,
+     "name": "Dragon's Breath",
+     "cd": 20,
+     "pull_utility": false
+    },
+    {
+     "id": 113724,
+     "name": "Ring of Frost",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 157981,
+     "name": "Blast Wave",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 122,
+     "name": "Frost Nova",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 118,
+     "name": "Polymorph",
+     "cd": 0,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Mage-Frost": {
+   "role": "dps",
+   "kick": {
+    "id": 2139,
+    "name": "Counterspell",
+    "cd": 24
+   },
+   "defensives": [
+    {
+     "id": 45438,
+     "name": "Ice Block",
+     "cd": 240,
+     "kind": "immunity",
+     "baseline": true
+    },
+    {
+     "id": 11426,
+     "name": "Ice Barrier",
+     "cd": 25,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 342245,
+     "name": "Alter Time",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 55342,
+     "name": "Mirror Image",
+     "cd": 120,
+     "kind": "minor",
+     "baseline": true
+    },
+    {
+     "id": 414659,
+     "name": "Ice Cold",
+     "cd": 240,
+     "kind": "immunity",
+     "baseline": false
+    }
+   ],
+   "selfheals": [],
+   "cc": [
+    {
+     "id": 113724,
+     "name": "Ring of Frost",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 157981,
+     "name": "Blast Wave",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 122,
+     "name": "Frost Nova",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 118,
+     "name": "Polymorph",
+     "cd": 0,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Warlock-Affliction": {
+   "role": "dps",
+   "kick": {
+    "id": 19647,
+    "name": "Spell Lock",
+    "cd": 24,
+    "pet": true
+   },
+   "defensives": [
+    {
+     "id": 104773,
+     "name": "Unending Resolve",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 108416,
+     "name": "Dark Pact",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 6789,
+     "name": "Mortal Coil",
+     "cd": 45,
+     "baseline": false
+    },
+    {
+     "id": 234153,
+     "name": "Drain Life",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 30283,
+     "name": "Shadowfury",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 5484,
+     "name": "Howl of Terror",
+     "cd": 40,
+     "pull_utility": false
+    },
+    {
+     "id": 6789,
+     "name": "Mortal Coil",
+     "cd": 45,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Warlock-Demonology": {
+   "role": "dps",
+   "kick": {
+    "id": 19647,
+    "name": "Spell Lock",
+    "cd": 24,
+    "pet": true
+   },
+   "defensives": [
+    {
+     "id": 104773,
+     "name": "Unending Resolve",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 108416,
+     "name": "Dark Pact",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 6789,
+     "name": "Mortal Coil",
+     "cd": 45,
+     "baseline": false
+    },
+    {
+     "id": 234153,
+     "name": "Drain Life",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 30283,
+     "name": "Shadowfury",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 5484,
+     "name": "Howl of Terror",
+     "cd": 40,
+     "pull_utility": false
+    },
+    {
+     "id": 6789,
+     "name": "Mortal Coil",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 89766,
+     "name": "Axe Toss",
+     "cd": 30,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Warlock-Destruction": {
+   "role": "dps",
+   "kick": {
+    "id": 19647,
+    "name": "Spell Lock",
+    "cd": 24,
+    "pet": true
+   },
+   "defensives": [
+    {
+     "id": 104773,
+     "name": "Unending Resolve",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 108416,
+     "name": "Dark Pact",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 6789,
+     "name": "Mortal Coil",
+     "cd": 45,
+     "baseline": false
+    },
+    {
+     "id": 234153,
+     "name": "Drain Life",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 30283,
+     "name": "Shadowfury",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 5484,
+     "name": "Howl of Terror",
+     "cd": 40,
+     "pull_utility": false
+    },
+    {
+     "id": 6789,
+     "name": "Mortal Coil",
+     "cd": 45,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Monk-Brewmaster": {
+   "role": "tank",
+   "kick": {
+    "id": 116705,
+    "name": "Spear Hand Strike",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 115203,
+     "name": "Fortifying Brew",
+     "cd": 360,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 322507,
+     "name": "Celestial Brew",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 122278,
+     "name": "Dampen Harm",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 122783,
+     "name": "Diffuse Magic",
+     "cd": 90,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 115176,
+     "name": "Zen Meditation",
+     "cd": 300,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 322101,
+     "name": "Expel Harm",
+     "cd": 15,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 119381,
+     "name": "Leg Sweep",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 116844,
+     "name": "Ring of Peace",
+     "cd": 45,
+     "pull_utility": true
+    },
+    {
+     "id": 115078,
+     "name": "Paralysis",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 324312,
+     "name": "Clash",
+     "cd": 30,
+     "pull_utility": true
+    }
+   ],
+   "active_mitigation": [
+    {
+     "id": 322120,
+     "name": "Shuffle",
+     "buff_id": 215479
+    }
+   ]
+  },
+  "Monk-Mistweaver": {
+   "role": "healer",
+   "kick": {
+    "id": 116705,
+    "name": "Spear Hand Strike",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 115203,
+     "name": "Fortifying Brew",
+     "cd": 360,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 122278,
+     "name": "Dampen Harm",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 122783,
+     "name": "Diffuse Magic",
+     "cd": 90,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 116849,
+     "name": "Life Cocoon",
+     "cd": 120,
+     "kind": "major",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 322101,
+     "name": "Expel Harm",
+     "cd": 15,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 119381,
+     "name": "Leg Sweep",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 116844,
+     "name": "Ring of Peace",
+     "cd": 45,
+     "pull_utility": true
+    },
+    {
+     "id": 115078,
+     "name": "Paralysis",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 198898,
+     "name": "Song of Chi-Ji",
+     "cd": 30,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Monk-Windwalker": {
+   "role": "dps",
+   "kick": {
+    "id": 116705,
+    "name": "Spear Hand Strike",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 115203,
+     "name": "Fortifying Brew",
+     "cd": 360,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 122470,
+     "name": "Touch of Karma",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 122278,
+     "name": "Dampen Harm",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 122783,
+     "name": "Diffuse Magic",
+     "cd": 90,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 322101,
+     "name": "Expel Harm",
+     "cd": 15,
+     "baseline": true
+    },
+    {
+     "id": 116670,
+     "name": "Vivify",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 119381,
+     "name": "Leg Sweep",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 116844,
+     "name": "Ring of Peace",
+     "cd": 45,
+     "pull_utility": true
+    },
+    {
+     "id": 115078,
+     "name": "Paralysis",
+     "cd": 45,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Druid-Balance": {
+   "role": "dps",
+   "kick": {
+    "id": 78675,
+    "name": "Solar Beam",
+    "cd": 60
+   },
+   "defensives": [
+    {
+     "id": 22812,
+     "name": "Barkskin",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 5487,
+     "name": "Bear Form",
+     "cd": 0,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 108238,
+     "name": "Renewal",
+     "cd": 90,
+     "baseline": false
+    },
+    {
+     "id": 8936,
+     "name": "Regrowth",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 5211,
+     "name": "Mighty Bash",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 99,
+     "name": "Incapacitating Roar",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 132469,
+     "name": "Typhoon",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 102793,
+     "name": "Ursol's Vortex",
+     "cd": 60,
+     "pull_utility": true
+    },
+    {
+     "id": 102359,
+     "name": "Mass Entanglement",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 33786,
+     "name": "Cyclone",
+     "cd": 0,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Druid-Feral": {
+   "role": "dps",
+   "kick": {
+    "id": 106839,
+    "name": "Skull Bash",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 61336,
+     "name": "Survival Instincts",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 22812,
+     "name": "Barkskin",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 5487,
+     "name": "Bear Form",
+     "cd": 0,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 108238,
+     "name": "Renewal",
+     "cd": 90,
+     "baseline": false
+    },
+    {
+     "id": 8936,
+     "name": "Regrowth",
+     "cd": 0,
+     "baseline": true
+    },
+    {
+     "id": 22842,
+     "name": "Frenzied Regeneration",
+     "cd": 36,
+     "baseline": false
+    }
+   ],
+   "cc": [
+    {
+     "id": 22570,
+     "name": "Maim",
+     "cd": 20,
+     "pull_utility": false
+    },
+    {
+     "id": 5211,
+     "name": "Mighty Bash",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 99,
+     "name": "Incapacitating Roar",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 132469,
+     "name": "Typhoon",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 102793,
+     "name": "Ursol's Vortex",
+     "cd": 60,
+     "pull_utility": true
+    },
+    {
+     "id": 102359,
+     "name": "Mass Entanglement",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 33786,
+     "name": "Cyclone",
+     "cd": 0,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Druid-Guardian": {
+   "role": "tank",
+   "kick": {
+    "id": 106839,
+    "name": "Skull Bash",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 61336,
+     "name": "Survival Instincts",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 22812,
+     "name": "Barkskin",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 200851,
+     "name": "Rage of the Sleeper",
+     "cd": 90,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 22842,
+     "name": "Frenzied Regeneration",
+     "cd": 36,
+     "baseline": true
+    },
+    {
+     "id": 108238,
+     "name": "Renewal",
+     "cd": 90,
+     "baseline": false
+    },
+    {
+     "id": 8936,
+     "name": "Regrowth",
+     "cd": 0,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 5211,
+     "name": "Mighty Bash",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 99,
+     "name": "Incapacitating Roar",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 132469,
+     "name": "Typhoon",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 102793,
+     "name": "Ursol's Vortex",
+     "cd": 60,
+     "pull_utility": true
+    },
+    {
+     "id": 102359,
+     "name": "Mass Entanglement",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 33786,
+     "name": "Cyclone",
+     "cd": 0,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": [
+    {
+     "id": 192081,
+     "name": "Ironfur",
+     "buff_id": 192081
+    }
+   ]
+  },
+  "Druid-Restoration": {
+   "role": "healer",
+   "kick": null,
+   "defensives": [
+    {
+     "id": 22812,
+     "name": "Barkskin",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 102342,
+     "name": "Ironbark",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 5487,
+     "name": "Bear Form",
+     "cd": 0,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 108238,
+     "name": "Renewal",
+     "cd": 90,
+     "baseline": false
+    },
+    {
+     "id": 132158,
+     "name": "Nature's Swiftness",
+     "cd": 60,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 5211,
+     "name": "Mighty Bash",
+     "cd": 60,
+     "pull_utility": false
+    },
+    {
+     "id": 99,
+     "name": "Incapacitating Roar",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 132469,
+     "name": "Typhoon",
+     "cd": 30,
+     "pull_utility": true
+    },
+    {
+     "id": 102793,
+     "name": "Ursol's Vortex",
+     "cd": 60,
+     "pull_utility": true
+    },
+    {
+     "id": 102359,
+     "name": "Mass Entanglement",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 33786,
+     "name": "Cyclone",
+     "cd": 0,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "DemonHunter-Havoc": {
+   "role": "dps",
+   "kick": {
+    "id": 183752,
+    "name": "Disrupt",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 198589,
+     "name": "Blur",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 196555,
+     "name": "Netherwalk",
+     "cd": 180,
+     "kind": "immunity",
+     "baseline": false
+    },
+    {
+     "id": 196718,
+     "name": "Darkness",
+     "cd": 300,
+     "kind": "major",
+     "baseline": true
+    }
+   ],
+   "selfheals": [],
+   "cc": [
+    {
+     "id": 179057,
+     "name": "Chaos Nova",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 211881,
+     "name": "Fel Eruption",
+     "cd": 30,
+     "pull_utility": false
+    },
+    {
+     "id": 217832,
+     "name": "Imprison",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 207684,
+     "name": "Sigil of Misery",
+     "cd": 90,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "DemonHunter-Vengeance": {
+   "role": "tank",
+   "kick": {
+    "id": 183752,
+    "name": "Disrupt",
+    "cd": 15
+   },
+   "defensives": [
+    {
+     "id": 204021,
+     "name": "Fiery Brand",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 187827,
+     "name": "Metamorphosis",
+     "cd": 180,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 196718,
+     "name": "Darkness",
+     "cd": 300,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 202137,
+     "name": "Sigil of Silence",
+     "cd": 60,
+     "kind": "minor",
+     "baseline": true
+    }
+   ],
+   "selfheals": [],
+   "cc": [
+    {
+     "id": 202138,
+     "name": "Sigil of Chains",
+     "cd": 90,
+     "pull_utility": true
+    },
+    {
+     "id": 179057,
+     "name": "Chaos Nova",
+     "cd": 45,
+     "pull_utility": false
+    },
+    {
+     "id": 207684,
+     "name": "Sigil of Misery",
+     "cd": 90,
+     "pull_utility": false
+    },
+    {
+     "id": 217832,
+     "name": "Imprison",
+     "cd": 45,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": [
+    {
+     "id": 203720,
+     "name": "Demon Spikes",
+     "buff_id": 203819
+    }
+   ]
+  },
+  "Evoker-Devastation": {
+   "role": "dps",
+   "kick": {
+    "id": 351338,
+    "name": "Quell",
+    "cd": 40
+   },
+   "defensives": [
+    {
+     "id": 363916,
+     "name": "Obsidian Scales",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 374348,
+     "name": "Renewing Blaze",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 374227,
+     "name": "Zephyr",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 374348,
+     "name": "Renewing Blaze",
+     "cd": 90,
+     "baseline": true
+    },
+    {
+     "id": 360995,
+     "name": "Verdant Embrace",
+     "cd": 24,
+     "baseline": true
+    },
+    {
+     "id": 355913,
+     "name": "Emerald Blossom",
+     "cd": 30,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 368970,
+     "name": "Tail Swipe",
+     "cd": 90,
+     "pull_utility": true
+    },
+    {
+     "id": 357214,
+     "name": "Wing Buffet",
+     "cd": 90,
+     "pull_utility": true
+    },
+    {
+     "id": 358385,
+     "name": "Landslide",
+     "cd": 90,
+     "pull_utility": false
+    },
+    {
+     "id": 360806,
+     "name": "Sleep Walk",
+     "cd": 15,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Evoker-Preservation": {
+   "role": "healer",
+   "kick": {
+    "id": 351338,
+    "name": "Quell",
+    "cd": 40
+   },
+   "defensives": [
+    {
+     "id": 363916,
+     "name": "Obsidian Scales",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 374348,
+     "name": "Renewing Blaze",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 374227,
+     "name": "Zephyr",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    },
+    {
+     "id": 363534,
+     "name": "Rewind",
+     "cd": 240,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 357170,
+     "name": "Time Dilation",
+     "cd": 60,
+     "kind": "major",
+     "baseline": true
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 374348,
+     "name": "Renewing Blaze",
+     "cd": 90,
+     "baseline": true
+    },
+    {
+     "id": 360995,
+     "name": "Verdant Embrace",
+     "cd": 24,
+     "baseline": true
+    },
+    {
+     "id": 355913,
+     "name": "Emerald Blossom",
+     "cd": 30,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 368970,
+     "name": "Tail Swipe",
+     "cd": 90,
+     "pull_utility": true
+    },
+    {
+     "id": 357214,
+     "name": "Wing Buffet",
+     "cd": 90,
+     "pull_utility": true
+    },
+    {
+     "id": 358385,
+     "name": "Landslide",
+     "cd": 90,
+     "pull_utility": false
+    },
+    {
+     "id": 360806,
+     "name": "Sleep Walk",
+     "cd": 15,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
+  },
+  "Evoker-Augmentation": {
+   "role": "dps",
+   "kick": {
+    "id": 351338,
+    "name": "Quell",
+    "cd": 40
+   },
+   "defensives": [
+    {
+     "id": 363916,
+     "name": "Obsidian Scales",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 374348,
+     "name": "Renewing Blaze",
+     "cd": 90,
+     "kind": "major",
+     "baseline": true
+    },
+    {
+     "id": 374227,
+     "name": "Zephyr",
+     "cd": 120,
+     "kind": "major",
+     "baseline": false
+    }
+   ],
+   "selfheals": [
+    {
+     "id": 374348,
+     "name": "Renewing Blaze",
+     "cd": 90,
+     "baseline": true
+    },
+    {
+     "id": 360995,
+     "name": "Verdant Embrace",
+     "cd": 24,
+     "baseline": true
+    },
+    {
+     "id": 355913,
+     "name": "Emerald Blossom",
+     "cd": 30,
+     "baseline": true
+    }
+   ],
+   "cc": [
+    {
+     "id": 368970,
+     "name": "Tail Swipe",
+     "cd": 90,
+     "pull_utility": true
+    },
+    {
+     "id": 357214,
+     "name": "Wing Buffet",
+     "cd": 90,
+     "pull_utility": true
+    },
+    {
+     "id": 358385,
+     "name": "Landslide",
+     "cd": 90,
+     "pull_utility": false
+    },
+    {
+     "id": 360806,
+     "name": "Sleep Walk",
+     "cd": 15,
+     "pull_utility": false
+    }
+   ],
+   "active_mitigation": []
   }
  },
- "dungeons": {}
+ "dungeons": {
+  "Altar of Fangs": {
+   "encounter_id": 12993,
+   "sampled_runs": 4,
+   "avoidable": [
+    1307532,
+    1297422,
+    1306669,
+    1306890,
+    1301230
+   ],
+   "dangerous": [
+    1310358,
+    1294557,
+    1310666,
+    1307567,
+    1289416
+   ],
+   "avoidable_detail": [
+    {
+     "id": 1307532,
+     "name": "Bloodletting",
+     "share": 0.0036,
+     "cv": 0.42,
+     "max_share": 0.61,
+     "hits_per_run": 6.0,
+     "environment": false
+    },
+    {
+     "id": 1297422,
+     "name": "Deadly Venom",
+     "share": 0.0033,
+     "cv": 0.62,
+     "max_share": 0.51,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1306669,
+     "name": "Toxic Breath",
+     "share": 0.0031,
+     "cv": 0.5,
+     "max_share": 0.58,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1306890,
+     "name": "Unstable Totem",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    },
+    {
+     "id": 1301230,
+     "name": "Bloodletting",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    }
+   ],
+   "dangerous_detail": [
+    {
+     "id": 1310358,
+     "name": "Toxic Atrophy",
+     "begun": 21,
+     "completed": 1,
+     "interrupted": 20,
+     "p": 0.95
+    },
+    {
+     "id": 1294557,
+     "name": "Piercing Hiss",
+     "begun": 98,
+     "completed": 2,
+     "interrupted": 91,
+     "p": 0.93
+    },
+    {
+     "id": 1310666,
+     "name": "Toxic Atrophy",
+     "begun": 15,
+     "completed": 0,
+     "interrupted": 14,
+     "p": 0.93
+    },
+    {
+     "id": 1307567,
+     "name": "Mass Envenom",
+     "begun": 44,
+     "completed": 8,
+     "interrupted": 30,
+     "p": 0.68
+    },
+    {
+     "id": 1289416,
+     "name": "Envenom",
+     "begun": 261,
+     "completed": 77,
+     "interrupted": 151,
+     "p": 0.58
+    }
+   ],
+   "filler": [
+    {
+     "id": 1306381,
+     "name": "Fetid Spit",
+     "begun": 221,
+     "p": 0.13
+    }
+   ],
+   "confidence": "seeded"
+  },
+  "Den of Nalorakk": {
+   "encounter_id": 12825,
+   "sampled_runs": 4,
+   "avoidable": [
+    1238439,
+    1239871,
+    1297701,
+    1235549,
+    1252825,
+    1234846,
+    1243408
+   ],
+   "dangerous": [
+    1290205,
+    1309919,
+    1297778,
+    1235829,
+    1297696,
+    1246687
+   ],
+   "avoidable_detail": [
+    {
+     "id": 1238439,
+     "name": "Razor Dive",
+     "share": 0.0605,
+     "cv": 0.46,
+     "max_share": 0.36,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1239871,
+     "name": "Cryo Surge",
+     "share": 0.029,
+     "cv": 0.44,
+     "max_share": 0.33,
+     "hits_per_run": 82.2,
+     "environment": false
+    },
+    {
+     "id": 1297701,
+     "name": "Rotten Ground",
+     "share": 0.02,
+     "cv": 0.61,
+     "max_share": 0.46,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1235549,
+     "name": "Glacial Torment",
+     "share": 0.019,
+     "cv": 0.45,
+     "max_share": 0.42,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1252825,
+     "name": "Harsh Winds",
+     "share": 0.0112,
+     "cv": 0.5,
+     "max_share": 0.39,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1234846,
+     "name": "Toxic Spores",
+     "share": 0.0102,
+     "cv": 0.48,
+     "max_share": 0.35,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1243408,
+     "name": "Echoing Fury",
+     "share": 0.0099,
+     "cv": 0.49,
+     "max_share": 0.42,
+     "hits_per_run": 19.0,
+     "environment": false
+    }
+   ],
+   "dangerous_detail": [
+    {
+     "id": 1290205,
+     "name": "Lightning Bolt",
+     "begun": 44,
+     "completed": 2,
+     "interrupted": 41,
+     "p": 0.93
+    },
+    {
+     "id": 1309919,
+     "name": "Frigid Roar",
+     "begun": 71,
+     "completed": 2,
+     "interrupted": 65,
+     "p": 0.92
+    },
+    {
+     "id": 1297778,
+     "name": "Arc Lightning",
+     "begun": 29,
+     "completed": 1,
+     "interrupted": 24,
+     "p": 0.83
+    },
+    {
+     "id": 1235829,
+     "name": "Winter's Shroud",
+     "begun": 39,
+     "completed": 0,
+     "interrupted": 32,
+     "p": 0.82
+    },
+    {
+     "id": 1297696,
+     "name": "Healing Breeze",
+     "begun": 47,
+     "completed": 3,
+     "interrupted": 36,
+     "p": 0.77
+    },
+    {
+     "id": 1246687,
+     "name": "Lightning Bolt",
+     "begun": 71,
+     "completed": 22,
+     "interrupted": 43,
+     "p": 0.61
+    }
+   ],
+   "filler": [
+    {
+     "id": 1246847,
+     "name": "Shoot",
+     "begun": 249,
+     "p": 0.09
+    },
+    {
+     "id": 1241214,
+     "name": "Earth Bolt",
+     "begun": 183,
+     "p": 0.43
+    }
+   ],
+   "confidence": "seeded"
+  },
+  "Kings' Rest": {
+   "encounter_id": 61762,
+   "sampled_runs": 4,
+   "avoidable": [
+    1301851,
+    267618,
+    270503,
+    1312104,
+    270499,
+    1303374,
+    274387,
+    265914
+   ],
+   "dangerous": [
+    267273,
+    269369,
+    1258431,
+    1294972,
+    270901,
+    270492,
+    267763,
+    1295125
+   ],
+   "avoidable_detail": [
+    {
+     "id": 1301851,
+     "name": "Bloodthirsty Axe",
+     "share": 0.0424,
+     "cv": 0.44,
+     "max_share": 0.34,
+     "hits_per_run": 6.5,
+     "environment": false
+    },
+    {
+     "id": 267618,
+     "name": "Drain Fluids",
+     "share": 0.016,
+     "cv": 0.5,
+     "max_share": 0.53,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 270503,
+     "name": "Hunting Leap",
+     "share": 0.0147,
+     "cv": 0.49,
+     "max_share": 0.37,
+     "hits_per_run": 18.8,
+     "environment": false
+    },
+    {
+     "id": 1312104,
+     "name": "Spit Gold",
+     "share": 0.013,
+     "cv": 0.56,
+     "max_share": 0.4,
+     "hits_per_run": 17.8,
+     "environment": false
+    },
+    {
+     "id": 270499,
+     "name": "Frost Shock",
+     "share": 0.0081,
+     "cv": 0.62,
+     "max_share": 0.38,
+     "hits_per_run": 15.2,
+     "environment": false
+    },
+    {
+     "id": 1303374,
+     "name": "Searing Gold",
+     "share": 0.0067,
+     "cv": 0.68,
+     "max_share": 0.68,
+     "hits_per_run": 9.8,
+     "environment": false
+    },
+    {
+     "id": 274387,
+     "name": "Absorbed in Darkness",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    },
+    {
+     "id": 265914,
+     "name": "Molten Gold",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    }
+   ],
+   "dangerous_detail": [
+    {
+     "id": 267273,
+     "name": "Poison Nova",
+     "begun": 18,
+     "completed": 0,
+     "interrupted": 18,
+     "p": 1.0
+    },
+    {
+     "id": 269369,
+     "name": "Deathly Roar",
+     "begun": 9,
+     "completed": 1,
+     "interrupted": 8,
+     "p": 0.89
+    },
+    {
+     "id": 1258431,
+     "name": "Shadow Bolt",
+     "begun": 25,
+     "completed": 3,
+     "interrupted": 22,
+     "p": 0.88
+    },
+    {
+     "id": 1294972,
+     "name": "Soul Bolt",
+     "begun": 18,
+     "completed": 2,
+     "interrupted": 15,
+     "p": 0.83
+    },
+    {
+     "id": 270901,
+     "name": "Unholy Mending",
+     "begun": 10,
+     "completed": 0,
+     "interrupted": 8,
+     "p": 0.8
+    },
+    {
+     "id": 270492,
+     "name": "Hex",
+     "begun": 20,
+     "completed": 0,
+     "interrupted": 16,
+     "p": 0.8
+    },
+    {
+     "id": 267763,
+     "name": "Wretched Discharge",
+     "begun": 67,
+     "completed": 1,
+     "interrupted": 51,
+     "p": 0.76
+    },
+    {
+     "id": 1295125,
+     "name": "Spectral Bolt",
+     "begun": 73,
+     "completed": 29,
+     "interrupted": 37,
+     "p": 0.51
+    }
+   ],
+   "filler": [],
+   "confidence": "seeded"
+  },
+  "Murder Row": {
+   "encounter_id": 12813,
+   "sampled_runs": 4,
+   "avoidable": [
+    1216300,
+    1295427,
+    1295035,
+    1214355
+   ],
+   "dangerous": [
+    1201554,
+    474375,
+    1214922,
+    1257877
+   ],
+   "avoidable_detail": [
+    {
+     "id": 1216300,
+     "name": "Cutpurse",
+     "share": 0.023,
+     "cv": 0.49,
+     "max_share": 0.36,
+     "hits_per_run": 21.0,
+     "environment": false
+    },
+    {
+     "id": 1295427,
+     "name": "Flay",
+     "share": 0.0224,
+     "cv": 0.49,
+     "max_share": 0.32,
+     "hits_per_run": 23.8,
+     "environment": false
+    },
+    {
+     "id": 1295035,
+     "name": "Glaive Toss",
+     "share": 0.01,
+     "cv": 0.89,
+     "max_share": 0.69,
+     "hits_per_run": 14.2,
+     "environment": false
+    },
+    {
+     "id": 1214355,
+     "name": "Fire Bomb",
+     "share": 0.0071,
+     "cv": 0.51,
+     "max_share": 0.48,
+     "hits_per_run": 7.8,
+     "environment": false
+    }
+   ],
+   "dangerous_detail": [
+    {
+     "id": 1201554,
+     "name": "Seduction",
+     "begun": 37,
+     "completed": 0,
+     "interrupted": 35,
+     "p": 0.95
+    },
+    {
+     "id": 474375,
+     "name": "Chaos Bolt",
+     "begun": 65,
+     "completed": 8,
+     "interrupted": 56,
+     "p": 0.86
+    },
+    {
+     "id": 1214922,
+     "name": "Fel Rage",
+     "begun": 102,
+     "completed": 13,
+     "interrupted": 83,
+     "p": 0.81
+    },
+    {
+     "id": 1257877,
+     "name": "Scathing Review",
+     "begun": 16,
+     "completed": 16,
+     "interrupted": 10,
+     "p": 0.62
+    }
+   ],
+   "filler": [
+    {
+     "id": 1230298,
+     "name": "Chaos Barrage",
+     "begun": 64,
+     "p": 0.03
+    },
+    {
+     "id": 1216970,
+     "name": "Back to Work!",
+     "begun": 18,
+     "p": 0.22
+    },
+    {
+     "id": 1223204,
+     "name": "Felfire Burst",
+     "begun": 1524,
+     "p": 0.2
+    },
+    {
+     "id": 1216589,
+     "name": "Heartstop Poison",
+     "begun": 57,
+     "p": 0.05
+    }
+   ],
+   "confidence": "seeded"
+  },
+  "Ruby Life Pools": {
+   "encounter_id": 112521,
+   "sampled_runs": 4,
+   "avoidable": [
+    1307488,
+    385292,
+    1305923
+   ],
+   "dangerous": [
+    392576,
+    373017,
+    1305955,
+    372808,
+    371984,
+    384194
+   ],
+   "avoidable_detail": [
+    {
+     "id": 1307488,
+     "name": "Lightning Torrent",
+     "share": 0.0171,
+     "cv": 0.52,
+     "max_share": 0.45,
+     "hits_per_run": 39.2,
+     "environment": false
+    },
+    {
+     "id": 385292,
+     "name": "Molten Steel",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    },
+    {
+     "id": 1305923,
+     "name": "Living Bomb",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    }
+   ],
+   "dangerous_detail": [
+    {
+     "id": 392576,
+     "name": "Thunder Blast",
+     "begun": 20,
+     "completed": 1,
+     "interrupted": 19,
+     "p": 0.95
+    },
+    {
+     "id": 373017,
+     "name": "Blaze Volley",
+     "begun": 41,
+     "completed": 0,
+     "interrupted": 37,
+     "p": 0.9
+    },
+    {
+     "id": 1305955,
+     "name": "Fiery Blast",
+     "begun": 67,
+     "completed": 5,
+     "interrupted": 59,
+     "p": 0.88
+    },
+    {
+     "id": 372808,
+     "name": "Frigid Shard",
+     "begun": 71,
+     "completed": 7,
+     "interrupted": 62,
+     "p": 0.87
+    },
+    {
+     "id": 371984,
+     "name": "Frostbolt",
+     "begun": 107,
+     "completed": 20,
+     "interrupted": 76,
+     "p": 0.71
+    },
+    {
+     "id": 384194,
+     "name": "Cinderbolt",
+     "begun": 252,
+     "completed": 80,
+     "interrupted": 144,
+     "p": 0.57
+    }
+   ],
+   "filler": [],
+   "confidence": "seeded"
+  },
+  "Temple of Sethraliss": {
+   "encounter_id": 61877,
+   "sampled_runs": 4,
+   "avoidable": [
+    1292993,
+    264763,
+    1308116,
+    1303596,
+    1296052,
+    1298329,
+    1293133,
+    1291815,
+    1301253,
+    273274
+   ],
+   "dangerous": [
+    1302158,
+    1293307,
+    267027,
+    1310683,
+    1291262
+   ],
+   "avoidable_detail": [
+    {
+     "id": 1292993,
+     "name": "Swarming Sands",
+     "share": 0.0513,
+     "cv": 0.49,
+     "max_share": 0.36,
+     "hits_per_run": 79.0,
+     "environment": false
+    },
+    {
+     "id": 264763,
+     "name": "Spark Step",
+     "share": 0.0259,
+     "cv": 0.98,
+     "max_share": 0.53,
+     "hits_per_run": 41.0,
+     "environment": false
+    },
+    {
+     "id": 1308116,
+     "name": "Arrow Barrage",
+     "share": 0.0255,
+     "cv": 0.41,
+     "max_share": 0.41,
+     "hits_per_run": 81.5,
+     "environment": false
+    },
+    {
+     "id": 1303596,
+     "name": "Siphon Energy",
+     "share": 0.0165,
+     "cv": 0.91,
+     "max_share": 0.59,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1296052,
+     "name": "Imbued Conduction",
+     "share": 0.0124,
+     "cv": 0.6,
+     "max_share": 0.51,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1298329,
+     "name": "Thunder Spit",
+     "share": 0.0098,
+     "cv": 0.41,
+     "max_share": 0.52,
+     "hits_per_run": 19.5,
+     "environment": false
+    },
+    {
+     "id": 1293133,
+     "name": "Lingering Storm",
+     "share": 0.0048,
+     "cv": 0.57,
+     "max_share": 0.66,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1291815,
+     "name": "Induction Field",
+     "share": 0.003,
+     "cv": 0.41,
+     "max_share": 0.62,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1301253,
+     "name": "Agony of Sethraliss",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    },
+    {
+     "id": 273274,
+     "name": "Polarized Field",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    }
+   ],
+   "dangerous_detail": [
+    {
+     "id": 1302158,
+     "name": "Flame Shock",
+     "begun": 21,
+     "completed": 0,
+     "interrupted": 20,
+     "p": 0.95
+    },
+    {
+     "id": 1293307,
+     "name": "Addle Mind",
+     "begun": 23,
+     "completed": 0,
+     "interrupted": 17,
+     "p": 0.74
+    },
+    {
+     "id": 267027,
+     "name": "Poison Spit",
+     "begun": 37,
+     "completed": 6,
+     "interrupted": 27,
+     "p": 0.73
+    },
+    {
+     "id": 1310683,
+     "name": "Venom Bolt",
+     "begun": 115,
+     "completed": 34,
+     "interrupted": 70,
+     "p": 0.61
+    },
+    {
+     "id": 1291262,
+     "name": "Lightning Bolt",
+     "begun": 292,
+     "completed": 91,
+     "interrupted": 162,
+     "p": 0.55
+    }
+   ],
+   "filler": [
+    {
+     "id": 1292990,
+     "name": "Swarming Krolusks",
+     "begun": 9,
+     "p": 0.11
+    }
+   ],
+   "confidence": "seeded"
+  },
+  "The Blinding Vale": {
+   "encounter_id": 12859,
+   "sampled_runs": 4,
+   "avoidable": [
+    1247052,
+    1250937,
+    1237330,
+    1314885,
+    1237858,
+    1235865,
+    1239919,
+    1251345
+   ],
+   "dangerous": [
+    1238294,
+    1235616,
+    1301834,
+    1238232,
+    1247669,
+    1238063
+   ],
+   "avoidable_detail": [
+    {
+     "id": 1247052,
+     "name": "Lightbloom's Might",
+     "share": 0.0294,
+     "cv": 0.42,
+     "max_share": 0.38,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1250937,
+     "name": "Toxic Spew",
+     "share": 0.0197,
+     "cv": 0.42,
+     "max_share": 0.31,
+     "hits_per_run": 11.2,
+     "environment": false
+    },
+    {
+     "id": 1237330,
+     "name": "Bloodthorn Roots",
+     "share": 0.0156,
+     "cv": 0.64,
+     "max_share": 0.54,
+     "hits_per_run": 49.0,
+     "environment": false
+    },
+    {
+     "id": 1314885,
+     "name": "Hunting Leap",
+     "share": 0.0109,
+     "cv": 0.5,
+     "max_share": 0.37,
+     "hits_per_run": 17.5,
+     "environment": false
+    },
+    {
+     "id": 1237858,
+     "name": "Ruptured Earth",
+     "share": 0.0055,
+     "cv": 0.63,
+     "max_share": 0.54,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1235865,
+     "name": "Thornblade",
+     "share": 0.0047,
+     "cv": 0.41,
+     "max_share": 0.4,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1239919,
+     "name": "Lightfire Beams",
+     "share": 0.003,
+     "cv": 0.5,
+     "max_share": 0.75,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1251345,
+     "name": "Blight Resin",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    }
+   ],
+   "dangerous_detail": [
+    {
+     "id": 1238294,
+     "name": "Disorienting Screech",
+     "begun": 57,
+     "completed": 0,
+     "interrupted": 53,
+     "p": 0.93
+    },
+    {
+     "id": 1235616,
+     "name": "Light Bolt",
+     "begun": 76,
+     "completed": 4,
+     "interrupted": 69,
+     "p": 0.91
+    },
+    {
+     "id": 1301834,
+     "name": "Light Bolt Volley",
+     "begun": 89,
+     "completed": 5,
+     "interrupted": 75,
+     "p": 0.84
+    },
+    {
+     "id": 1238232,
+     "name": "Seed Shot",
+     "begun": 92,
+     "completed": 22,
+     "interrupted": 62,
+     "p": 0.67
+    },
+    {
+     "id": 1247669,
+     "name": "Lightspore Shot",
+     "begun": 143,
+     "completed": 17,
+     "interrupted": 84,
+     "p": 0.59
+    },
+    {
+     "id": 1238063,
+     "name": "Light Bolt",
+     "begun": 214,
+     "completed": 82,
+     "interrupted": 113,
+     "p": 0.53
+    }
+   ],
+   "filler": [
+    {
+     "id": 1239821,
+     "name": "Warden's Wrath",
+     "begun": 35,
+     "p": 0.46
+    }
+   ],
+   "confidence": "seeded"
+  },
+  "Voidscar Arena": {
+   "encounter_id": 12923,
+   "sampled_runs": 4,
+   "avoidable": [
+    1300156,
+    1289258,
+    1287450,
+    1249712,
+    1264188,
+    456057
+   ],
+   "dangerous": [
+    1249621,
+    1233398,
+    1298899,
+    1299938,
+    1228176
+   ],
+   "avoidable_detail": [
+    {
+     "id": 1300156,
+     "name": "Void Beam",
+     "share": 0.0143,
+     "cv": 0.69,
+     "max_share": 0.48,
+     "hits_per_run": 48.8,
+     "environment": false
+    },
+    {
+     "id": 1289258,
+     "name": "Corrosive Essence",
+     "share": 0.0059,
+     "cv": 0.58,
+     "max_share": 0.47,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1287450,
+     "name": "Condensed Mass",
+     "share": 0.0056,
+     "cv": 0.63,
+     "max_share": 0.62,
+     "hits_per_run": 0.0,
+     "environment": false
+    },
+    {
+     "id": 1249712,
+     "name": "Venomous Spit",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    },
+    {
+     "id": 1264188,
+     "name": "Unstable Singularity",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    },
+    {
+     "id": 456057,
+     "name": "Vile Putrescence",
+     "environment": true,
+     "note": "Environment-sourced ground effect"
+    }
+   ],
+   "dangerous_detail": [
+    {
+     "id": 1249621,
+     "name": "Violent Sand",
+     "begun": 8,
+     "completed": 0,
+     "interrupted": 8,
+     "p": 1.0
+    },
+    {
+     "id": 1233398,
+     "name": "Mad Shriek",
+     "begun": 37,
+     "completed": 0,
+     "interrupted": 35,
+     "p": 0.95
+    },
+    {
+     "id": 1298899,
+     "name": "Demoralizing Shout",
+     "begun": 22,
+     "completed": 3,
+     "interrupted": 19,
+     "p": 0.86
+    },
+    {
+     "id": 1299938,
+     "name": "Shadowbolt Volley",
+     "begun": 17,
+     "completed": 1,
+     "interrupted": 14,
+     "p": 0.82
+    },
+    {
+     "id": 1228176,
+     "name": "Lava Bolt",
+     "begun": 164,
+     "completed": 53,
+     "interrupted": 87,
+     "p": 0.53
+    }
+   ],
+   "filler": [
+    {
+     "id": 1300249,
+     "name": "Devour",
+     "begun": 8,
+     "p": 0.12
+    }
+   ],
+   "confidence": "seeded"
+  }
+ }
 }

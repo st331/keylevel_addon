@@ -86,10 +86,15 @@ client; unknown keys are ignored. Served with `access-control-allow-origin: *`.
 
 Size: three measures at three tiers measured 0.21 MB gzipped; twelve measures ≈ 0.7 MB.
 
-## 3. Contract: the run store `https://st331.github.io/wowlogs/runs/<c>.json.gz`
+## 3. Contract: the run store `https://st331.github.io/wowlogs/runs/<hh>.json.gz`
 
-One shard per first character of the report code (`[A-Za-z0-9]`, case-sensitive, ≤ 62
-files, ~150 KB gzipped each), rebuilt with the site, covering the retention window:
+256 shards by a hash of the report code, rebuilt with the site, covering the retention
+window at key level 10 and above. Shard = `h` as two lowercase hex digits where
+`h = 0; for each of the first four characters: h = (h × 31 + charCode) mod 256`
+(identical in the collector and in `docs/js/runstore.js`). An empty shard is still
+published (empty `runs`) so a fetch never fails. Measured on a full window: ~17 MB
+gzipped in total without bundle fields (≈ 65 KB per shard); the site fetches at most
+one shard per run it looks up.
 
 ```jsonc
 {
@@ -109,8 +114,11 @@ files, ~150 KB gzipped each), rebuilt with the site, covering the retention wind
 }
 ```
 
-Bundle fields are `null` when `exec` is false. `kicks_by` / `dispels_by` are keyed by enemy
-spell id so the client can apply the current priority table. The client fetches only the
+Bundle fields are omitted when `exec` is false (the client reads a missing field as
+null). `kicks_by` / `dispels_by` are keyed by enemy spell id so the client can apply the
+current priority table; the run-level `dispel_spells` (applied / dispelled / expired per
+debuff) is kept for the healer's missed-dispel share, the per-run interrupt table is not
+(the population `priority` table covers it). The client fetches only the
 shards its applicants' runs need (≤ 8 per applicant), caches each for 30 minutes keyed on
 `built`, and looks up `<code>:<fightID>` from the applicant's `encounterRankings` list.
 
