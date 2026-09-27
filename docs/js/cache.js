@@ -39,6 +39,10 @@ export function slimResult(result) {
         historicalPercent: r.historicalPercent,
         rankPercent: r.rankPercent,
         startTime: r.startTime,
+        // the execution measures need to know a run was timed (medal) and
+        // its length; both are small
+        ...(r.medal !== undefined ? { medal: r.medal } : {}),
+        ...(typeof r.duration === "number" ? { duration: r.duration } : {}),
         ...(r.report?.code ? { report: { code: r.report.code, fightID: r.report.fightID } } : {}),
       })),
     };

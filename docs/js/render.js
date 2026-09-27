@@ -266,7 +266,7 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
   const dgHead = encounter ? `${esc(encounter.name)}${level ? ` (want +${level})` : ""}` : "This dungeon";
 
   let html = `<div class="table-wrap"><table class="summary"><thead><tr>
-    <th>Applicant</th><th>${anyHead}</th><th>${dgHead}</th>
+    <th>Applicant</th><th title="Set B: the execution measures — see the legend">Key fit</th><th>${anyHead}</th><th>${dgHead}</th>
   </tr></thead><tbody>`;
 
   rows.forEach((entry, i) => {
@@ -274,12 +274,109 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
     const key = esc(entry.key ?? fullName);
     html += `<tr class="row" data-idx="${i}" data-key="${key}">
       <td>${nameHTML(fullName, player?.class)}${roleChipsHTML(entry)}${profileLinkHTML(region, slug, fullName)}${scoresHTML(entry.scores)}</td>
+      <td class="fit-cell">${fitCellHTML(entry.fit)}</td>
       <td>${anyCellHTML(ev, level)}</td>
       <td>${dungeonCellHTML(ev, level, encounter?.id)}</td>
     </tr>
-    <tr class="detail-row" data-idx="${i}" data-key="${key}"><td colspan="3">${detailMatrixHTML(player, encounters, level)}</td></tr>`;
+    <tr class="detail-row" data-idx="${i}" data-key="${key}"><td colspan="4">${fitDetailHTML(entry.fit)}${detailMatrixHTML(player, encounters, level)}</td></tr>`;
   });
 
   html += `</tbody></table></div>`;
+  return html;
+}
+
+// ------------------------------------------------------------------
+// Set B: the "Key fit" column and its detail panel. fit is what app.js
+// attaches to an entry: { state: "pending"|"ready"|"none", note?,
+// assess?: measures.assess() output, provenance?: [{code, fightID, dungeon,
+// level, source}] }
+
+const MEASURE_META = {
+  damage:    ["DMG",    "Damage vs players of the same spec in timed runs of that dungeon and key level (recency-weighted median over their runs)"],
+  kicks:     ["KICK",   "Interrupts: share of dangerous casts kicked when the kick was up and nobody else could (or, without events, priority-weighted kicks per minute vs the cell)"],
+  selfsave:  ["SAVE",   "Self-save: when they dropped below 35 % for 1.5 s or more, how often they pressed a defensive, self-heal, healthstone or potion"],
+  deaths:    ["DEATHS", "Own-fault deaths beyond the allowance (1 + 0.25 per run). Chain and one-shot deaths never count; the first solo death is free"],
+  avoidable: ["AVOID",  "Avoidable damage taken per minute (curated list for the dungeon) vs the cell — lower is better"],
+  triage:    ["TRIAGE", "Healer: time from an ally dropping under 35 % to this healer's first direct heal on them (isolated episodes), and the share never healed"],
+  dispels:   ["DISPEL", "Healer: own dispels per minute vs the cell, and the share of dispellable debuffs that expired"],
+};
+
+function fitTier(pct) {
+  return tierClass(Math.floor(pct));
+}
+
+export function fitChipHTML(name, m) {
+  const [label, hint] = MEASURE_META[name] ?? [name.toUpperCase(), ""];
+  if (!m) return "";
+  if (m.excluded) return `<span class="fit-chip muted" title="${esc(hint)} — ${esc(m.excluded)}">${label} —</span>`;
+  if (m.z === null || m.z === undefined) {
+    const need = m.n !== undefined ? ` (n=${m.n})` : "";
+    return `<span class="fit-chip muted" title="${esc(hint)} — not enough data yet${esc(need)}">${label} ·</span>`;
+  }
+  if (name === "deaths") {
+    const text = m.excess > 0 ? `−${Math.round(m.loss01 * 100)}%` : "ok";
+    const cls = m.excess > 0 ? (m.loss01 >= 0.5 ? "tier-gray" : "tier-green") : "tier-blue";
+    return `<span class="fit-chip ${cls}" title="${esc(hint)} — ${m.W} weighted deaths over ${m.n} runs, allowance ${m.allowance}">${label} ${text}</span>`;
+  }
+  const pct = Math.round(m.pct ?? 50);
+  const mode = m.mode ? ` · ${m.mode}` : "";
+  return `<span class="fit-chip ${fitTier(pct)}" title="${esc(hint)} — percentile ${pct} over ${m.n} run(s)${esc(mode)}">${label} ${pct}</span>`;
+}
+
+export function fitCellHTML(fit) {
+  if (!fit || fit.state === "none") return `<span class="muted">${esc(fit?.note ?? "—")}</span>`;
+  if (fit.state === "pending") return `<span class="muted fit-pending">${esc(fit.note ?? "computing…")}</span>`;
+  const a = fit.assess;
+  if (!a) return `<span class="muted">—</span>`;
+  const order = Object.keys(a.weights ?? {});
+  const chips = order.map((name) => fitChipHTML(name, a.measures[name])).join(" ");
+  let head;
+  if (a.composite) {
+    const pct = Math.round(a.composite.pct);
+    head = `<span class="pct ${fitTier(pct)} fit-score" title="Key fit: weighted composite of the execution measures, shown as a percentile among players of the role. ${Math.round(a.composite.presentWeight)} of 100 weight present.">${pct}<i class="sfx">fit</i></span> <span class="muted">n ${a.runs}</span>`;
+  } else {
+    head = `<span class="muted" title="Not enough of the weight is scoreable yet (${a.present.join(", ") || "nothing"} present)">no composite yet · n ${a.runs}</span>`;
+  }
+  const flags = (a.flags ?? []).map((f) => `<span class="fit-flag" title="${esc(f.text)}">⚑ ${esc(f.kind)}</span>`).join(" ");
+  return `<div class="fit">${head} ${flags}<div class="fit-chips">${chips}</div></div>`;
+}
+
+function deathLine(d, run) {
+  const when = run?.start ? new Date(run.start).toISOString().slice(0, 10) : "";
+  const where = run ? `${esc(run.dungeon ?? "")} +${run.level ?? "?"}` : "";
+  const at = typeof d.rel === "number" ? `${Math.floor(d.rel / 60)}:${String(Math.floor(d.rel % 60)).padStart(2, "0")}` : "";
+  const why = (d.reasons ?? []).join("; ");
+  return `<li><span class="death-cls death-${esc(d.cls)}">${esc(d.cls)}</span> ${where} <span class="muted">${when} ${at}</span> — <span class="muted">${esc(why)}</span> <span class="muted">(${d.cost})</span></li>`;
+}
+
+export function fitDetailHTML(fit) {
+  if (!fit || fit.state !== "ready" || !fit.assess) return "";
+  const a = fit.assess;
+  let html = `<div class="fit-detail"><div class="fit-detail-head">Execution (Set B) · ${a.runs} run(s) in the window</div>`;
+  html += `<ul class="fit-measures">`;
+  for (const [name, weight] of Object.entries(a.weights ?? {})) {
+    const m = a.measures[name];
+    const [label] = MEASURE_META[name] ?? [name];
+    let text;
+    if (!m) text = "—";
+    else if (m.excluded) text = esc(m.excluded);
+    else if (name === "deaths") text = m.n ? `${m.W} weighted deaths over ${m.n} runs (allowance ${m.allowance}${m.excess > 0 ? `, excess ${m.excess}` : ""})` : "no run with death data";
+    else if (m.z === null || m.z === undefined) text = `not enough data (n=${m.n ?? 0})`;
+    else text = `percentile ${Math.round(m.pct)} over ${m.n} run(s)${m.mode ? ` · ${m.mode}` : ""}`;
+    const extra = name === "damage" && m?.plusMinus?.delta !== null && m?.plusMinus?.delta !== undefined ? ` · plus-minus ${m.plusMinus.delta >= 0 ? "+" : ""}${m.plusMinus.delta.toFixed(1)} pp over ${m.plusMinus.n} run(s)` : "";
+    html += `<li><b>${label}</b> <span class="muted">w${weight}</span> — ${text}${esc(extra)}</li>`;
+  }
+  if (a.measures.potions) html += `<li><b>POTIONS</b> — potion used in ${Math.round(a.measures.potions.share * 100)} % of ${a.measures.potions.n} runs${a.measures.potions.pass ? "" : " (gate failed: −3)"}</li>`;
+  html += `</ul>`;
+  const deaths = (a.measures.deaths?.perRun ?? []).flatMap((r) => (r.deaths ?? []).map((d) => deathLine(d, r)));
+  if (deaths.length) html += `<div class="fit-detail-sub">Deaths, classified</div><ul class="fit-deaths">${deaths.join("")}</ul>`;
+  if (a.flags?.length) html += `<div class="fit-detail-sub">Flags</div><ul class="fit-flags">${a.flags.map((f) => `<li>${esc(f.text)}</li>`).join("")}</ul>`;
+  if (fit.provenance?.length) {
+    const counts = {};
+    for (const p of fit.provenance) counts[p.source] = (counts[p.source] ?? 0) + 1;
+    const parts = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(" · ");
+    html += `<div class="matrix-note">Run data: ${esc(parts)}. "store" = read from the wowlogs collector (never re-pulled); "live" = pulled once from Warcraft Logs for runs the collector will never sweep; "pending" = too fresh to know, events only.</div>`;
+  }
+  html += `</div>`;
   return html;
 }

@@ -130,3 +130,128 @@ export async function fetchCharactersParallel(ctx, chars, encounters, metric, pe
   );
   return fetched.flat();
 }
+
+// ------------------------------------------------------------------
+// Set B: per-run report data for the execution measures. Which run gets
+// which query is decided in app.js by the no-repeat rule (see
+// design/baselines-from-wowlogs.md §1): events are always live (nobody
+// else fetches them), tables only for runs the wowlogs store will never
+// hold.
+
+const s = (v) => JSON.stringify(v);
+export const idsExpr = (ids) => `ability.id in (${[...ids].map(Number).filter(Number.isFinite).join(",")})`;
+
+// items: [{ code, fightID, kitIds: Set, dangerousIds: Set|null, avoidableIds: Set|null, tables: bool }]
+export function buildRunBundleQuery(items) {
+  const parts = items.map((it, i) => {
+    const F = `fightIDs: [${Number(it.fightID)}]`;
+    const lines = [
+      `fights(${F}) { id name startTime endTime keystoneLevel keystoneTime keystoneBonus friendlyPlayers }`,
+      `masterData { actors(type: "Player") { id name subType server } }`,
+      `playerDetails(${F})`,
+      `deaths: events(${F}, dataType: Deaths, hostilityType: Friendlies, limit: 200) { data }`,
+      `low: events(${F}, dataType: DamageTaken, hostilityType: Friendlies, includeResources: true, filterExpression: ${s("resources.hpPercent < 35 and resources.maxHitPoints > 0")}, limit: 10000) { data }`,
+      `ints: events(${F}, dataType: Interrupts, hostilityType: Friendlies, limit: 5000) { data }`,
+    ];
+    if (it.kitIds?.size) {
+      lines.push(`kit: events(${F}, dataType: Casts, hostilityType: Friendlies, filterExpression: ${s(idsExpr(it.kitIds))}, limit: 10000) { data }`);
+    }
+    if (it.dangerousIds?.size) {
+      lines.push(`begin: events(${F}, dataType: Casts, hostilityType: Enemies, filterExpression: ${s(`${idsExpr(it.dangerousIds)} and (type = "begincast" or type = "cast")`)}, limit: 10000) { data }`);
+    }
+    if (it.tables) {
+      lines.push(`summary: table(${F}, dataType: Summary)`);
+      lines.push(`interrupts: table(${F}, dataType: Interrupts)`);
+      lines.push(`dispels: table(${F}, dataType: Dispels)`);
+      if (it.avoidableIds?.size) lines.push(`dmgTaken: table(${F}, dataType: DamageTaken, filterExpression: ${s(idsExpr(it.avoidableIds))})`);
+      if (it.kitIds?.size) lines.push(`casts: table(${F}, dataType: Casts, filterExpression: ${s(idsExpr(it.kitIds))})`);
+      lines.push(`healing: table(${F}, dataType: Healing)`);
+    }
+    return `  r${i}: report(code: ${s(it.code)}) {\n    ${lines.join("\n    ")}\n  }`;
+  });
+  return `query {\n reportData {\n${parts.join("\n")}\n }\n}`;
+}
+
+const ev = (blob) => (Array.isArray(blob?.data) ? blob.data : []);
+
+export function parseRunBundle(node) {
+  if (!node) return null;
+  const fight = node.fights?.[0] ?? null;
+  const actors = node.masterData?.actors ?? [];
+  const pd = node.playerDetails?.data?.playerDetails ?? node.playerDetails?.playerDetails ?? null;
+  const tables = {};
+  for (const k of ["summary", "interrupts", "dispels", "dmgTaken", "casts", "healing"]) if (node[k]) tables[k] = node[k];
+  return {
+    fight, actors, playerDetails: pd,
+    events: {
+      deaths: ev(node.deaths),
+      low35: ev(node.low),
+      kitCasts: ev(node.kit),
+      begin: node.begin ? ev(node.begin) : null,
+      interrupts: ev(node.ints),
+    },
+    tables: Object.keys(tables).length ? tables : null,
+  };
+}
+
+// Several runs per request; all requests in flight together.
+export async function fetchRunBundles(ctx, items, perRequest = 4) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += perRequest) chunks.push(items.slice(i, i + perRequest));
+  const results = await Promise.all(chunks.map(async (chunk) => {
+    const data = await gql({ ...ctx, query: buildRunBundleQuery(chunk) });
+    const rd = data?.reportData ?? {};
+    return chunk.map((it, i) => ({ ...it, bundle: parseRunBundle(rd[`r${i}`]) }));
+  }));
+  return results.flat();
+}
+
+// ±10 s of party damage + healing around each own death, all in one
+// request: 2 points per death.
+// items: [{ code, fightID, deaths: [timestampMs...] }]
+export function buildWindowsQuery(items) {
+  const parts = [];
+  items.forEach((it, i) => {
+    const F = `fightIDs: [${Number(it.fightID)}]`;
+    const lines = [];
+    it.deaths.forEach((t, k) => {
+      const win = `startTime: ${Math.floor(t) - 10_000}, endTime: ${Math.floor(t) + 5_000}`;
+      lines.push(`d${k}: events(${F}, dataType: DamageTaken, hostilityType: Friendlies, includeResources: true, ${win}, limit: 5000) { data }`);
+      lines.push(`h${k}: events(${F}, dataType: Healing, hostilityType: Friendlies, includeResources: true, ${win}, limit: 5000) { data }`);
+    });
+    if (lines.length) parts.push(`  r${i}: report(code: ${s(it.code)}) {\n    ${lines.join("\n    ")}\n  }`);
+  });
+  return parts.length ? `query {\n reportData {\n${parts.join("\n")}\n }\n}` : null;
+}
+
+export async function fetchWindows(ctx, items) {
+  const wanted = items.filter((it) => it.deaths?.length);
+  if (!wanted.length) return items.map((it) => ({ ...it, windows: {} }));
+  const data = await gql({ ...ctx, query: buildWindowsQuery(wanted) });
+  const rd = data?.reportData ?? {};
+  const out = new Map();
+  wanted.forEach((it, i) => {
+    const node = rd[`r${i}`] ?? {};
+    const windows = {};
+    it.deaths.forEach((_, k) => { windows[k] = { dmg: ev(node[`d${k}`]), heal: ev(node[`h${k}`]) }; });
+    out.set(`${it.code}:${it.fightID}`, windows);
+  });
+  return items.map((it) => ({ ...it, windows: out.get(`${it.code}:${it.fightID}`) ?? {} }));
+}
+
+// The healer's own healing stream (every heal she landed, with the
+// target's HP), paged. Only for a healer applicant, on a few runs.
+export async function fetchHealerStream(ctx, { code, fightID, healerId }, maxPages = 3) {
+  const all = [];
+  let startTime = null;
+  for (let page = 0; page < maxPages; page++) {
+    const st = startTime === null ? "" : `, startTime: ${Math.floor(startTime)}`;
+    const query = `query { reportData { report(code: ${s(code)}) { heal: events(fightIDs: [${Number(fightID)}], dataType: Healing, sourceID: ${Number(healerId)}, includeResources: true, limit: 10000${st}) { data nextPageTimestamp } } } }`;
+    const data = await gql({ ...ctx, query });
+    const blob = data?.reportData?.report?.heal;
+    all.push(...ev(blob));
+    if (!blob?.nextPageTimestamp) break;
+    startTime = blob.nextPageTimestamp;
+  }
+  return all;
+}

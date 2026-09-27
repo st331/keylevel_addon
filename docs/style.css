@@ -166,3 +166,24 @@ footer .muted{ font-size:.78rem }
   main{ padding:22px 12px 50px }
   .hero-title{ font-size:1.8rem }
 }
+
+/* ---------------- Set B: key fit ---------------- */
+.fit{ display:flex; flex-direction:column; gap:4px; min-width:170px }
+.fit-score{ font-size:1.05rem }
+.fit-pending{ font-style:italic }
+.fit-chips{ display:flex; flex-wrap:wrap; gap:4px }
+.fit-chip{
+  font-size:.62rem; font-weight:700; letter-spacing:.04em; padding:.05rem .32rem;
+  border:1px solid var(--grid); border-radius:4px; font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+.fit-chip.muted{ color:var(--muted); font-weight:400 }
+.fit-flag{ font-size:.66rem; color:var(--gold); margin-left:.25rem }
+.fit-detail{ margin-bottom:14px; font-size:.85rem }
+.fit-detail-head{
+  color:var(--gold); font-weight:700; font-size:.7rem; text-transform:uppercase; letter-spacing:.1em; margin-bottom:6px;
+}
+.fit-detail-sub{ color:var(--gold); font-size:.66rem; text-transform:uppercase; letter-spacing:.1em; margin:8px 0 4px }
+.fit-measures, .fit-deaths, .fit-flags{ margin:0; padding-left:18px }
+.fit-measures li, .fit-deaths li, .fit-flags li{ margin:2px 0 }
+.death-cls{ font-size:.64rem; font-weight:700; padding:.02rem .3rem; border-radius:4px; border:1px solid var(--grid); text-transform:uppercase }
+.death-solo{ color:#ff6b6b } .death-chain{ color:var(--muted) } .death-oneshot{ color:#7aa8d8 } .death-duress{ color:#d8b87a } .death-unclear, .death-unclassified{ color:var(--muted) }

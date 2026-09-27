@@ -17,6 +17,19 @@ const MIME = {
   ".svg": "image/svg+xml", ".json": "application/json",
 };
 
+// Real Warcraft Logs event/table data (Altar of Fangs +16, 8 deaths), served
+// for every report code the fake sees; the Arms warrior in it is renamed to
+// the fixture applicant "Fitguy" so the site can find him by name.
+const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
+const F8 = JSON.parse(fs.readFileSync(path.join(FIX, "fight8.json"), "utf8"));
+const T8 = JSON.parse(fs.readFileSync(path.join(FIX, "tables_fight8.json"), "utf8"));
+const renamed = (o) => JSON.parse(JSON.stringify(o).replaceAll("Genjibb", "Fitguy"));
+const F8R = renamed(F8), T8R = renamed(T8);
+const NOW = Date.now();
+const FIT_RUNS = [ // code, days ago (FITRUN6 is one hour old: too fresh for the store to know)
+  ["FITRUN1", 3], ["FITRUN2", 5], ["FITRUN3", 7], ["FITRUN4", 9], ["FITRUN5", 11], ["FITRUN6", 1 / 24],
+];
+
 // --- static server for docs/ -------------------------------------------------
 // injectSecret mimics the Pages deploy workflow: substitute the placeholder
 // in config.js at serve time.
@@ -147,6 +160,18 @@ function characterResponse(query) {
         ] },
         [`e${PIT}`]: { ranks: [{ historicalPercent: 99.4, rankPercent: 99.4, todayPercent: 97.0, bracketData: 14, amount: 990_000, spec: "Fire" }] },
       };
+    } else if (name === "Fitguy" && slug === "area52" && !isHps) {
+      // the Key-fit applicant: six Arms runs of the same dungeon at the
+      // listing level, each pointing at a report the fake serves from the
+      // real fight-8 data
+      out[alias] = {
+        classID: 11,
+        [`e${AK}`]: { ranks: FIT_RUNS.map(([code, daysAgo], i) => ({
+          historicalPercent: 58.0, rankPercent: 58.0, bracketData: i % 2 ? 13 : 12, amount: 312_375, spec: "Arms", score: 420,
+          medal: "bronze", duration: 1_715_504, startTime: NOW - daysAgo * day, report: { code, fightID: 8 },
+        })) },
+        [`e${PIT}`]: { ranks: [] },
+      };
     } else if (slug === "area52" && /^(Newguy|Racer\d|Retry\d|Offguy|Clipguy)$/.test(name) && !isHps) {
       // stand-ins for the applicants that stream in while you are vetting
       out[alias] = {
@@ -194,6 +219,81 @@ function startFakeRio() {
   return new Promise((r) => server.listen(0, "127.0.0.1", () => r({ server, state, port: server.address().port })));
 }
 
+// Per-report aliases: r0: report(code: "X") { ... }. Bundle queries get the
+// fixture events (and the six tables only when asked, i.e. for runs the
+// wowlogs store does not hold); window queries get the ±10 s death
+// clusters; the healer stream is empty (no healer applicant in the roster).
+function reportResponse(query) {
+  const out = {};
+  const blocks = query.split(/(?=r\d+: report\(code: ")/).filter((b) => /^r\d+: report/.test(b));
+  for (const block of blocks) {
+    const alias = /^(r\d+):/.exec(block)[1];
+    if (/dataType: Healing, sourceID:/.test(block)) { out.report = { heal: { data: [], nextPageTimestamp: null } }; continue; }
+    if (/fights\(fightIDs/.test(block)) {
+      const node = {
+        fights: [F8R.fight], masterData: { actors: F8R.actors.map((a) => ({ ...a, server: "Area 52" })) },
+        playerDetails: F8R.playerDetails,
+        deaths: { data: F8R.deaths }, low: { data: F8R.low35 }, ints: { data: F8R.interrupts },
+        kit: { data: F8R.kitCasts }, begin: { data: F8R.begincast },
+      };
+      if (/summary: table/.test(block)) Object.assign(node, { summary: T8R.summary, interrupts: T8R.interrupts, dispels: T8R.dispels, dmgTaken: T8R.dmgTaken, casts: T8R.casts, healing: T8R.healing });
+      out[alias] = node;
+      continue;
+    }
+    // death windows: d0/h0, d1/h1, ... each with its own startTime
+    const node = {};
+    for (const m of block.matchAll(/(d|h)(\d+): events\([^)]*startTime: (\d+)/g)) {
+      const [, kind, k, st] = m;
+      const t = Number(st) + 10_000;
+      const cluster = Object.keys(F8R.windows).filter((w) => w.startsWith("d")).find((w) => {
+        const ts = F8R.windows[w].map((e) => e.timestamp);
+        return t >= Math.min(...ts) - 1000 && t <= Math.max(...ts) + 2000;
+      });
+      node[`${kind}${k}`] = { data: cluster ? (kind === "d" ? F8R.windows[cluster] : F8R.windows["h" + cluster.slice(1)]) : [] };
+    }
+    out[alias] = node;
+  }
+  return { data: { reportData: out } };
+}
+
+// --- fake wowlogs (baselines + run store) -----------------------------------
+// FITRUN1 is in the store (never pulled from WCL again); the rest are not.
+function startFakeWowlogs() {
+  const state = { requests: [] };
+  const q = [5, 10, 25, 50, 75, 90, 95];
+  const baselines = {
+    built: new Date(NOW).toISOString(), season: "Mythic+ Season 1", quantiles: q,
+    measures: { dps: { unit: "per_s", better: "high" }, kick_prio: { unit: "per_min", better: "high" }, avoid_dmg_min: { unit: "per_min", better: "low" }, dispels_min: { unit: "per_min", better: "high" } },
+    cells: {
+      "Warrior-Arms|Windrunner Spire|12": { n: 500, n_exec: 200, dps: [250_000, 265_000, 285_000, 305_000, 330_000, 350_000, 365_000], kick_prio: [0.2, 0.3, 0.5, 0.8, 1.1, 1.5, 1.8], avoid_dmg_min: [1e4, 2e4, 4e4, 8e4, 1.5e5, 3e5, 4e5] },
+      "Warrior-Arms|Windrunner Spire|b12": { n: 900, n_exec: 400, dps: [250_000, 265_000, 285_000, 305_000, 330_000, 350_000, 365_000], kick_prio: [0.2, 0.3, 0.5, 0.8, 1.1, 1.5, 1.8], avoid_dmg_min: [1e4, 2e4, 4e4, 8e4, 1.5e5, 3e5, 4e5] },
+    },
+    priority: { "Windrunner Spire": { 1294557: { name: "Piercing Hiss", begun: 1000, completed: 100, interrupted: 900 }, 1289416: { name: "Envenom", begun: 500, completed: 200, interrupted: 300 }, 1306381: { name: "Fetid Spit", begun: 1200, completed: 1080, interrupted: 120 } } },
+    dispellable: {},
+  };
+  const stored = {
+    built: new Date(NOW).toISOString(),
+    runs: { "FITRUN1:8": { dun: "Windrunner Spire", lvl: 12, start: NOW - 3 * 86_400_000, dur_s: 1604, timed: true, exec: true,
+      players: [
+        { name: "Fitguy", server: "Area 52", class: "Warrior", spec: "Arms", role: "DPS", dps: 312_375, deaths: 2, deaths_chain: 1, pots: 6, hs: 0, kicks: 26, kicks_by: { 1294557: 20, 1306381: 6 }, dispels: 0, dispels_by: {}, avoid_dmg: 1_000_000, def_casts: 7, heal_total: 20_312_097, heal_over: 6_185_630 },
+        { name: "久仰", server: "Area 52", class: "Rogue", spec: "Assassination", role: "DPS", dps: 287_000, deaths: 3, deaths_chain: 1, pots: 5, hs: 1, kicks: 20, kicks_by: { 1294557: 10 }, dispels: 0, dispels_by: {}, avoid_dmg: 900_000, def_casts: 12, heal_total: 15_406_027, heal_over: 6_486_575 },
+        { name: "Anniecpt", server: "Area 52", class: "Hunter", spec: "Marksmanship", role: "DPS", dps: 300_000, deaths: 1, deaths_chain: 1, pots: 6, hs: 1, kicks: 13, kicks_by: { 1294557: 4 }, dispels: 3, dispels_by: {}, avoid_dmg: 700_000, def_casts: 9, heal_total: 10_333_555, heal_over: 9_469_345 },
+        { name: "桃君呐", server: "Area 52", class: "Shaman", spec: "Restoration", role: "Healer", dps: 42_000, deaths: 1, deaths_chain: 1, pots: 1, hs: 2, kicks: 7, kicks_by: { 1294557: 1 }, dispels: 18, dispels_by: { 1307571: 8 }, avoid_dmg: 800_000, def_casts: 14, heal_total: 200_808_703, heal_over: 89_909_577 },
+        { name: "男童", server: "Area 52", class: "DeathKnight", spec: "Blood", role: "Tank", dps: 164_000, deaths: 1, deaths_chain: 0, pots: 6, hs: 1, kicks: 27, kicks_by: { 1294557: 11 }, dispels: 0, dispels_by: {}, avoid_dmg: 2_000_000, def_casts: 40, heal_total: 263_559_961, heal_over: 128_256_588 },
+      ] } },
+  };
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://x");
+    state.requests.push(url.pathname);
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("content-type", "application/json");
+    if (url.pathname === "/baselines.json.gz") { res.end(JSON.stringify(baselines)); return; }
+    if (url.pathname === "/runs/F.json.gz") { res.end(JSON.stringify(stored)); return; }
+    res.writeHead(404); res.end("{}");
+  });
+  return new Promise((r) => server.listen(0, "127.0.0.1", () => r({ server, state, port: server.address().port })));
+}
+
 function startFakeWcl() {
   const state = { tokenRequests: 0, gqlRequests: 0, lastTokenAuth: null, lastTokenGrant: null };
   const server = http.createServer((req, res) => {
@@ -216,6 +316,11 @@ function startFakeWcl() {
       }
       state.gqlRequests++;
       const { query } = JSON.parse(body);
+      if (query.includes("reportData")) {
+        (state.reportQueries ??= []).push(query);
+        res.end(JSON.stringify(reportResponse(query)));
+        return;
+      }
       if (!query.includes("worldData")) {
         state.lastCharQuery = query;
         (state.charQueries ??= []).push(query);
@@ -231,6 +336,7 @@ const bareSrv = await startStatic(); // repo copy: placeholder intact
 const deployedSrv = await startStatic({ injectSecret: "e2e-injected-secret" });
 const wcl = await startFakeWcl();
 const rio = await startFakeRio();
+const wowlogs = await startFakeWowlogs();
 const browser = await chromium.launch(
   process.env.PLAYWRIGHT_CHROMIUM ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM } : {},
 );
@@ -249,14 +355,18 @@ async function check(name, fn) {
 async function newPage() {
   const page = await (await browser.newContext()).newPage();
   page.on("pageerror", (e) => { failed++; console.error("not ok - page error: " + e.message); });
-  await page.addInitScript(({ tokenUrl, apiUrl, rioUrl }) => {
+  await page.addInitScript(({ tokenUrl, apiUrl, rioUrl, baselinesUrl, runStoreUrl }) => {
     localStorage.setItem("kllTokenUrl", tokenUrl);
     localStorage.setItem("kllApiUrl", apiUrl);
     localStorage.setItem("kllRioUrl", rioUrl);
+    localStorage.setItem("kllBaselinesUrl", baselinesUrl);
+    localStorage.setItem("kllRunStoreUrl", runStoreUrl);
   }, {
     tokenUrl: `http://127.0.0.1:${wcl.port}/token`,
     apiUrl: `http://127.0.0.1:${wcl.port}/gql`,
     rioUrl: `http://127.0.0.1:${rio.port}/profile`,
+    baselinesUrl: `http://127.0.0.1:${wowlogs.port}/baselines.json.gz`,
+    runStoreUrl: `http://127.0.0.1:${wowlogs.port}/runs/`,
   });
   return page;
 }
@@ -299,13 +409,14 @@ try {
 
     await check("results render (exact-level hit + missing character)", async () => {
       const cells = await page.locator("tr.row", { hasText: "Foo-Area52" }).locator("td").allInnerTexts();
+      // cells: [applicant, key fit, any dungeon, this dungeon]
       // any-dungeon cell: only AK logged at +12 (best 91.2) -> 91b 91a 91m (1 dungeon)
-      assert.match(cells[1], /91b\s*91a\s*91m/, "b/a/m inline in the any-dungeon cell");
-      assert.match(cells[1], /1 dungeon/);
+      assert.match(cells[2], /91b\s*91a\s*91m/, "b/a/m inline in the any-dungeon cell");
+      assert.match(cells[2], /1 dungeon/);
       // this-dungeon cell: two +12 runs (91.2, 60) -> best 91, avg/med 76
-      assert.match(cells[2], /91b\s*76a\s*76m/, "per-run b/a/m for the dungeon");
-      assert.match(cells[2], /@\+12/);
-      assert.match(cells[2], /· 3mo/, "best run's age shown");
+      assert.match(cells[3], /91b\s*76a\s*76m/, "per-run b/a/m for the dungeon");
+      assert.match(cells[3], /@\+12/);
+      assert.match(cells[3], /· 3mo/, "best run's age shown");
       const ghost = await page.locator("tr.row", { hasText: "Ghost-Sargeras" }).innerText();
       assert.match(ghost, /no WCL character/);
     });
@@ -396,7 +507,8 @@ try {
       assert.doesNotMatch(head, /avg · med/i);
       assert.match(head, /any dungeon @\+12/i);
       const headers = await page.locator("table.summary > thead th").count();
-      assert.equal(headers, 3, "three columns total");
+      assert.equal(headers, 4, "applicant, key fit, any dungeon, this dungeon");
+      assert.match(head, /key fit/i);
     });
 
     await check("Foo sorts above Ghost", async () => {
@@ -739,6 +851,85 @@ try {
     await page.context().close();
   }
 
+  // ============ scenario 1d: Key fit (Set B) ================================
+  {
+    const page = await newPage();
+    await page.goto(`http://127.0.0.1:${deployedSrv.port}/index.html?region=us&level=12&dungeon=Windrunner%20Spire&chars=Fitguy-Area52,Foo-Area52`);
+    await page.waitForSelector("table.summary", { timeout: 10_000 });
+    const row = () => page.locator('tr.row[data-key="Fitguy-Area52@us"]');
+    const blocksFor = (code) => (wcl.state.reportQueries ?? []).flatMap((q) => q.split(/(?=r\d+: report\(code: ")/).filter((b) => b.includes(`report(code: "${code}")`)));
+
+    await check("key fit: the composite and its chips appear after the Key % table", async () => {
+      await page.waitForSelector('tr.row[data-key="Fitguy-Area52@us"] .fit-score', { timeout: 20_000 });
+      const text = await row().innerText();
+      assert.match(text, /\d+fit/, "a composite percentile");
+      assert.match(text, /n 6/, "six runs in the window");
+      assert.match(text, /DMG \d+/);
+      assert.match(text, /KICK \d+/);
+      assert.match(text, /DEATHS −\d+%/, "a solo death every run costs the deaths weight");
+      assert.match(text, /⚑ deaths/, "repeated own-fault deaths flagged");
+    });
+
+    await check("key fit: the run already in the wowlogs store was not pulled again; absent runs were; the fresh run got events only", async () => {
+      assert.ok(wowlogs.state.requests.includes("/runs/F.json.gz"), "the store shard was consulted");
+      assert.ok(wowlogs.state.requests.includes("/baselines.json.gz"), "the baselines were fetched");
+      const stored = blocksFor("FITRUN1");
+      assert.ok(stored.length >= 1, "events were pulled for the stored run (only this site needs them)");
+      assert.ok(stored.every((b) => !/summary: table/.test(b)), "…but never its tables");
+      const absent = blocksFor("FITRUN2");
+      assert.ok(absent.some((b) => /summary: table/.test(b) && /interrupts: table/.test(b) && /healing: table/.test(b)), "a run the collector will never sweep gets its tables live, once");
+      const fresh = blocksFor("FITRUN6");
+      assert.ok(fresh.length >= 1 && fresh.every((b) => !/summary: table/.test(b)), "an hour-old run is too fresh to know: events only");
+      assert.ok(absent.some((b) => /begin: events/.test(b) && /1294557/.test(b)), "dangerous casts from the baselines' priority table");
+      assert.ok((wcl.state.reportQueries ?? []).some((q) => /d0: events\(fightIDs: \[8\], dataType: DamageTaken[^)]*startTime: \d+, endTime: \d+/.test(q)), "death windows requested");
+    });
+
+    await check("key fit: damage is judged against the cell, not the Key %", async () => {
+      const dmg = await row().locator(".fit-chip", { hasText: "DMG" }).getAttribute("title");
+      assert.match(dmg, /percentile 5\d|percentile 6\d/, "312k sits just above the cell's 305k median (58 % Key % would also be ~58, so check the source in the panel)");
+      await row().click();
+      const panel = page.locator('tr.detail-row[data-key="Fitguy-Area52@us"]');
+      const text = await panel.innerText();
+      assert.match(text, /Execution \(Set B\) · 6 run\(s\)/i);
+      assert.match(text, /Deaths, classified/i);
+      assert.match(text, /solo/i);
+      assert.match(text, /chain/i);
+      assert.match(text, /Spell Reflection/, "the available-and-unused defensive is named");
+      assert.match(text, /Run data:/i, "provenance line");
+      assert.match(text, /1 store/i);
+      assert.match(text, /1 pending/i);
+    });
+
+    await check("key fit: an applicant with one run gets no composite, and says so", async () => {
+      const foo = page.locator('tr.row[data-key="Foo-Area52@us"]');
+      await page.waitForFunction(() => !/computing/.test(document.querySelector('tr.row[data-key="Foo-Area52@us"] .fit-cell')?.textContent ?? "computing"), null, { timeout: 20_000 });
+      assert.match(await foo.locator(".fit-cell").innerText(), /no composite yet · n 1/);
+    });
+
+    await check("key fit: a second lookup pulls nothing — the facts were cached", async () => {
+      const before = (wcl.state.reportQueries ?? []).length;
+      await page.evaluate(() => { document.querySelector("#status").textContent = ""; });
+      await page.click("#lookup");
+      await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("done"));
+      await page.waitForSelector('tr.row[data-key="Fitguy-Area52@us"] .fit-score', { timeout: 20_000 });
+      const codes = (q) => [...q.matchAll(/report\(code: "([^"]+)"\)/g)].map((m) => m[1]).join(",") + (/summary: table/.test(q) ? " +tables" : "") + (/d0: events/.test(q) ? " windows" : "");
+      assert.equal((wcl.state.reportQueries ?? []).length, before,
+        `no report query: every run's facts were remembered — queries: ${(wcl.state.reportQueries ?? []).map(codes).join(" | ")}`);
+      const box = await page.evaluate(() => JSON.parse(localStorage.getItem("kllRunFacts")));
+      assert.ok(box && Object.keys(box.entries).length >= 6, "facts persisted per run");
+    });
+
+    await check("key fit: the toggle turns the column off and remembers it", async () => {
+      await page.click("#fit");
+      assert.equal(await page.evaluate(() => localStorage.getItem("kllFit")), "0");
+      assert.match(await row().locator(".fit-cell").innerText(), /^—$/);
+      await page.click("#fit");
+      await page.waitForSelector('tr.row[data-key="Fitguy-Area52@us"] .fit-score', { timeout: 20_000 });
+    });
+
+    await page.context().close();
+  }
+
   // ============ scenario 1b: plain visit (no params) ========================
   {
     const page = await newPage();
@@ -808,6 +999,7 @@ try {
   deployedSrv.server.close();
   wcl.server.close();
   rio.server.close();
+  wowlogs.server.close();
 }
 
 console.log(failed === 0 ? "e2e: all checks passed" : `e2e: ${failed} check(s) FAILED`);

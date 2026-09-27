@@ -383,11 +383,71 @@ test("summaryHTML sorts best-first, includes detail rows and profile links", () 
   assert.match(html, /Any dungeon @\+12/);
   assert.match(html, /want \+12/);
   assert.match(html, /detail-row/);
-  assert.match(html, /colspan="3"/);
+  assert.match(html, /colspan="4"/, "applicant, key fit, any dungeon, this dungeon");
   assert.match(html, /no WCL character/);
   assert.match(html, /character\/us\/area-52\/Alice/, "profile link present");
   // alice @12: AK 91.2 + CoT 71.0 -> 91b 81a 81m inline in the any-dungeon cell
   assert.match(html, />91<i class="sfx">b</);
   assert.match(html, />81<i class="sfx">a</);
   assert.match(html, />81<i class="sfx">m</);
+});
+
+// ---------------------------------------------------------------- key fit
+import { fitCellHTML, fitChipHTML, fitDetailHTML } from "../docs/js/render.js";
+
+test("fitCellHTML: pending, none, ready with composite and chips", () => {
+  assert.match(fitCellHTML({ state: "pending", note: "computing…" }), /computing…/);
+  assert.match(fitCellHTML({ state: "none", note: "no runs in the window" }), /no runs in the window/);
+  assert.match(fitCellHTML(null), /—/);
+  const ready = {
+    state: "ready",
+    assess: {
+      runs: 6, weights: { damage: 50, kicks: 18, selfsave: 10, deaths: 10, avoidable: 12 },
+      composite: { pct: 71.4, presentWeight: 88 },
+      present: ["damage", "kicks", "deaths"], flags: [{ kind: "deaths", text: "repeated own-fault deaths" }],
+      measures: {
+        damage: { n: 6, pct: 74, z: 0.5 },
+        kicks: { n: 5, pct: 61, z: 0.2, mode: "utilisation" },
+        selfsave: { n: 1, z: null },
+        deaths: { n: 6, z: -2, W: 6.6, allowance: 2.5, excess: 4.1, loss01: 1 },
+        avoidable: { n: 0, z: null },
+      },
+    },
+  };
+  const html = fitCellHTML(ready);
+  assert.match(html, /class="pct tier-blue fit-score"[^>]*>71<i class="sfx">fit<\/i>/, "composite as a tiered percentile");
+  assert.match(html, /n 6/);
+  assert.match(html, /DMG 74/);
+  assert.match(html, /KICK 61/);
+  assert.match(html, /utilisation/, "mode in the tooltip");
+  assert.match(html, /SAVE ·/, "not enough data reads as a dot");
+  assert.match(html, /DEATHS −100%/);
+  assert.match(html, /⚑ deaths/);
+  assert.match(fitChipHTML("selfsave", { excluded: "Blood DK lives below 35 %" }), /SAVE —/);
+  assert.match(fitChipHTML("deaths", { n: 4, z: 0, W: 0.3, allowance: 2, excess: 0, loss01: 0 }), /DEATHS ok/);
+});
+
+test("fitDetailHTML lists measures, classified deaths and provenance", () => {
+  const fit = {
+    state: "ready",
+    provenance: [{ code: "A", fightID: 1, source: "store" }, { code: "B", fightID: 2, source: "live" }, { code: "C", fightID: 3, source: "cached" }],
+    assess: {
+      runs: 3, weights: { damage: 50, deaths: 10 }, present: ["damage"], flags: [{ kind: "potions", text: "potion in only 20 % of logged runs" }],
+      composite: null,
+      measures: {
+        damage: { n: 3, pct: 60, z: 0.2, plusMinus: { delta: 4.2, n: 2 } },
+        deaths: { n: 3, z: 0, W: 1.1, allowance: 1.75, excess: 0, loss01: 0, perRun: [{ dungeon: "Windrunner Spire", level: 12, start: Date.UTC(2026, 8, 20), deaths: [{ cls: "solo", cost: 1, rel: 1230.7, reasons: ["5.3 s of warning, Spell Reflection available and unused"] }, { cls: "chain", cost: 0.1, rel: 177.1, reasons: ["1 party death(s) in the prior 5 s"] }] }] },
+        potions: { n: 5, share: 0.2, pass: false },
+      },
+    },
+  };
+  const html = fitDetailHTML(fit);
+  assert.match(html, /Execution \(Set B\) · 3 run\(s\)/);
+  assert.match(html, /<b>DMG<\/b> <span class="muted">w50<\/span> — percentile 60 over 3 run\(s\) · plus-minus \+4\.2 pp/);
+  assert.match(html, /Deaths, classified/);
+  assert.match(html, /death-solo">solo<\/span> Windrunner Spire \+12 <span class="muted">2026-09-20 20:30<\/span>/);
+  assert.match(html, /Spell Reflection available and unused/);
+  assert.match(html, /gate failed: −3/);
+  assert.match(html, /1 store · 1 live · 1 cached/);
+  assert.equal(fitDetailHTML({ state: "pending" }), "");
 });
