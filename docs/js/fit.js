@@ -14,7 +14,7 @@ import { roleOfSpec, pickPercent, classToken } from "./transform.js";
 export const WINDOW_SPREAD = 2;      // listing level ± 2
 export const DAMAGE_RUNS = 15;       // newest runs that feed the damage measure
 export const EXEC_RUNS = 8;          // newest runs that get tables/events
-export const HEALER_STREAM_RUNS = 4; // the healer's healing stream is 6 MB a run
+export const HEALER_STREAM_RUNS = 4; // the healer's healing stream is 3–5 MB a run (brotli on the wire)
 export const FACTS_TTL = 14 * 86_400_000;
 export const FACTS_MAX = 400;
 export const FACTS_VERSION = 1;
@@ -152,8 +152,11 @@ export function runStore(opts) {
 
 // Compute the fit for one applicant.
 //   entry: { fullName, selected (role), player.class (token), region }
-//   ctx: WCL ctx (token + endpoints); deps: { lists, baselines, store, storage, now, log }
-// Returns { state, assess, provenance, note }.
+//   ctx: WCL ctx (token + endpoints); deps: { lists, baselines, store, storage, now, log, onPartial }
+// Returns { state, assess, provenance, note }. When runs still have to be
+// fetched, deps.onPartial first receives what the rankings alone say
+// ({ state: "partial", ... }: the damage measure and every run already
+// remembered), so a number is on screen before Warcraft Logs answers.
 export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps) {
   const now = deps.now ?? Date.now();
   const role = entry.selected ?? entry.detected ?? "dps";
@@ -180,12 +183,19 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
     else todo.push(w);
   }
   deps.debug?.(`facts: ${facts.size} cached, ${todo.length} to fetch (${todo.map((w) => `${w.code}:${w.fightID}`).join(",")}); keys=${Object.keys(cache).length}`);
+  const assessNow = () => assess(orderedFacts(window, facts, name, { cls, role }), role, { baselines, priority: baselines?.priority ?? null, now });
+  if (todo.length && deps.onPartial) {
+    try { deps.onPartial({ state: "partial", assess: assessNow(), provenance: provenance.slice(), spec, role }); }
+    catch (e) { deps.log?.(`partial fit: ${e.message}`); }
+  }
 
-  // 2. where does each run's table data come from?
+  // 2. where does each run's table data come from? (one shard fetch per
+  // distinct shard, all in flight together)
   const store = deps.store ?? runStore();
   const items = [];
-  for (const w of todo) {
-    const look = await store.lookup(w.code, w.fightID, w.start);
+  const looks = await Promise.all(todo.map((w) => store.lookup(w.code, w.fightID, w.start)));
+  for (const [i, w] of todo.entries()) {
+    const look = looks[i];
     const dangerous = new Set([...(baselines?.dangerousFor?.(w.dungeon) ?? []), ...(lists?.dungeons?.[w.dungeon]?.dangerous ?? []).map(Number)]);
     const avoidable = new Set((lists?.dungeons?.[w.dungeon]?.avoidable ?? []).map(Number));
     items.push({ code: w.code, fightID: w.fightID, w, look, kitIds, dangerousIds: dangerous, avoidableIds: avoidable, tables: look.status === "absent" });
@@ -207,21 +217,23 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
     const deaths = (b.bundle?.events?.deaths ?? []).filter((d) => d.targetID === selfId).map((d) => d.timestamp).sort((a, c) => a - c);
     return { ...b, selfId, deaths };
   });
-  let withWindows = prepared;
-  try {
-    withWindows = await fetchWindows(ctx, prepared.map((p) => ({ code: p.code, fightID: p.fightID, deaths: p.deaths, _p: p })));
-  } catch (e) {
-    deps.log?.(`death windows unavailable: ${e.message}`);
-    withWindows = prepared.map((p) => ({ ...p, windows: {} }));
-  }
+  // the death windows and the healer's streams need nothing from each
+  // other: both go out at once
+  const windowsP = (async () => {
+    try {
+      return await fetchWindows(ctx, prepared.map((p) => ({ code: p.code, fightID: p.fightID, deaths: p.deaths, _p: p })));
+    } catch (e) {
+      deps.log?.(`death windows unavailable: ${e.message}`);
+      return prepared.map((p) => ({ ...p, windows: {} }));
+    }
+  })();
   const streams = new Map();
-  if (role === "healer") {
-    const few = prepared.filter((p) => p.selfId !== null).slice(0, HEALER_STREAM_RUNS);
-    await Promise.all(few.map(async (p) => {
+  const streamsP = role !== "healer" ? Promise.resolve() : Promise.all(
+    prepared.filter((p) => p.selfId !== null).slice(0, HEALER_STREAM_RUNS).map(async (p) => {
       try { streams.set(`${p.code}:${p.fightID}`, await fetchHealerStream(ctx, { code: p.code, fightID: p.fightID, healerId: p.selfId })); }
       catch { /* triage simply stays unknown for this run */ }
     }));
-  }
+  const [withWindows] = await Promise.all([windowsP, streamsP]);
 
   // 4. runs → facts (cooldowns calibrated over everything we know)
   const newRuns = [];
@@ -254,6 +266,13 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
   }
 
   // 5. damage-only runs beyond the execution window still count for damage
+  const result = assessNow();
+  return { state: "ready", assess: result, provenance, spec, role };
+}
+
+// The facts the measures engine reads, newest first: a run's remembered
+// facts when it has them, otherwise what the rankings alone say (damage).
+function orderedFacts(window, facts, name, { cls, role }) {
   const ordered = [];
   for (const w of window.slice(0, DAMAGE_RUNS)) {
     const k = factsKey(w.code, w.fightID, name);
@@ -261,6 +280,5 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
     if (f) ordered.push(f);
     else ordered.push({ v: 1, code: w.code, fightID: w.fightID, dungeon: w.dungeon, level: w.level, start: w.start, durationS: w.duration ? w.duration / 1000 : null, timed: w.timed, cls, spec: w.spec, role, amount: w.amount, keyPct: w.keyPct, players: [], own: null, dispel_spells: null, execSource: null, hasEvents: false, deaths: null, selfsave: null, kicks: null, triage: null, triageScore: null, casts: null });
   }
-  const result = assess(ordered, role, { baselines, priority: baselines?.priority ?? null, now });
-  return { state: "ready", assess: result, provenance, spec, role };
+  return ordered;
 }

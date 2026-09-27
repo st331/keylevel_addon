@@ -80,6 +80,7 @@ function setStatus(msg, isError) {
 
 // ---------------------------------------------------------------- token
 
+let tokenInFlight = null; // the dungeon prefetch and a paste can ask at the same moment
 async function ensureToken(force) {
   const creds = embeddedCredentials();
   if (!creds) throw new WclError(MISSING_CREDS_MSG);
@@ -88,7 +89,10 @@ async function ensureToken(force) {
   const expires = Number(localStorage.getItem(LS.tokenExpires) || 0);
   if (!force && cached && Date.now() < expires - 60_000) return cached;
 
-  const { token, expiresAt } = await getToken({ ...creds, ...endpoints() });
+  if (!tokenInFlight) {
+    tokenInFlight = getToken({ ...creds, ...endpoints() }).finally(() => { tokenInFlight = null; });
+  }
+  const { token, expiresAt } = await tokenInFlight;
   localStorage.setItem(LS.token, token);
   localStorage.setItem(LS.tokenExpires, String(expiresAt));
   return token;
@@ -388,8 +392,11 @@ async function computeFits(entries, results, zone, level, ctx) {
     while (queue.length) {
       const e = queue.shift();
       if (generation !== fitGeneration) return; // a newer lookup took over
+      // what the rankings alone say goes on screen at once; the execution
+      // measures replace it when Warcraft Logs has answered
+      const onPartial = (fit) => { if (generation === fitGeneration) { e.fit = fit; renderResults(); } };
       try {
-        e.fit = await assessEntry(e, results.get(e.key), zone.encounters, level, ctx, deps);
+        e.fit = await assessEntry(e, results.get(e.key), zone.encounters, level, ctx, { ...deps, onPartial });
       } catch (err) {
         console.warn("[fit]", err);
         e.fit = { state: "none", note: "execution data unavailable" };
@@ -397,7 +404,7 @@ async function computeFits(entries, results, zone, level, ctx) {
       if (generation === fitGeneration) renderResults();
     }
   };
-  await Promise.all([worker(), worker(), worker()]);
+  await Promise.all([worker(), worker(), worker(), worker()]);
 }
 
 // last successful lookup, kept so role-chip clicks can re-render without
@@ -625,6 +632,14 @@ async function prefetchDungeons() {
   } catch { /* the first Look up will surface any real problem */ }
 }
 
+// The spell lists and the population baselines are the same for every
+// applicant: have them in memory before the first paste.
+function prefetchFitDeps() {
+  if (!fitOn) return;
+  loadLists({ url: listsUrl() }).catch(() => {});
+  loadBaselines({ url: baselinesUrl() }).catch(() => {});
+}
+
 export function init() {
   $("lookup").addEventListener("click", (e) => runLookup(e)); // keeps Shift = fresh data
   // an explicit fresh-data control: Shift-click doesn't exist on touch
@@ -693,6 +708,7 @@ export function init() {
     runLookup(); // arrived via the addon's Copy URL: run immediately
   } else {
     prefetchDungeons();
+    prefetchFitDeps();
   }
 }
 

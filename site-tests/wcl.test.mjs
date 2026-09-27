@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getToken, gql, buildCharacterQuery, fetchCharacters, fetchCharactersParallel, guessMythicPlusZone, WclError } from "../docs/js/wcl.js";
+import { getToken, gql, buildCharacterQuery, fetchCharacters, fetchCharactersParallel, guessMythicPlusZone, WclError, fetchRunBundles, fetchHealerStream, MAX_IN_FLIGHT, inFlightCount } from "../docs/js/wcl.js";
 
 function fakeFetch(handler) {
   const calls = [];
@@ -114,4 +114,62 @@ test("a season rollover picks the NEW season while the old one is still unfrozen
   ];
   assert.equal(guessMythicPlusZone(zones).id, 55, "Season 2 wins over a still-open Season 1");
   assert.equal(guessMythicPlusZone([...zones].reverse()).id, 55, "and not by list order");
+});
+
+test("fetchRunBundles: one request per run, two for a run that needs tables, merged into one bundle", async () => {
+  const f = fakeFetch((url, opts) => {
+    const q = JSON.parse(opts.body).query;
+    const node = { fights: [{ id: 8, startTime: 0, endTime: 1000 }] };
+    if (/deaths: events/.test(q)) Object.assign(node, { deaths: { data: [{ timestamp: 5, targetID: 1 }] }, low: { data: [] }, ints: { data: [] } });
+    if (/summary: table/.test(q)) Object.assign(node, { masterData: { actors: [{ id: 1, name: "A" }] }, playerDetails: { data: { playerDetails: { dps: [] } } }, summary: { s: 1 }, interrupts: {}, dispels: {}, healing: {} });
+    return { json: { data: { reportData: { r0: node } } } };
+  });
+  const out = await fetchRunBundles({ token: "t", fetchImpl: f }, [
+    { code: "STORED", fightID: 8, tables: false },
+    { code: "ABSENT", fightID: 8, tables: true },
+  ]);
+  assert.equal(f.calls.length, 3, "one request for the stored run, two for the absent one");
+  const queries = f.calls.map((c) => JSON.parse(c.opts.body).query);
+  assert.ok(queries.every((q) => q.split("report(code:").length === 2), "never more than one run per request");
+  const absent = queries.filter((q) => q.includes('"ABSENT"'));
+  assert.ok(absent.some((q) => /deaths: events/.test(q) && !/summary: table/.test(q) && /fights\(/.test(q)), "an events half, with the fight");
+  assert.ok(absent.some((q) => /summary: table/.test(q) && /playerDetails/.test(q) && !/deaths: events/.test(q)), "a tables half, with the actors");
+  assert.equal(out[0].bundle.tables, null, "a stored run never asks for tables");
+  assert.equal(out[0].bundle.events.deaths.length, 1);
+  assert.equal(out[1].bundle.events.deaths.length, 1, "events from one half…");
+  assert.ok(out[1].bundle.tables?.summary, "…tables from the other");
+  assert.equal(out[1].bundle.actors.length, 1);
+  assert.equal(out[1].bundle.fight.endTime, 1000);
+});
+
+test("fetchHealerStream asks for heals only, without resources, and follows pages", async () => {
+  let n = 0;
+  const f = fakeFetch((url, opts) => {
+    const q = JSON.parse(opts.body).query;
+    assert.match(q, /dataType: Healing, sourceID: 42, filterExpression: "type = \\"heal\\""/);
+    assert.ok(!/includeResources/.test(q), "no resources: they double the bytes and the server time");
+    n++;
+    return { json: { data: { reportData: { report: { heal: { data: [{ timestamp: n }], nextPageTimestamp: n === 1 ? 500 : null } } } } } };
+  });
+  const ev = await fetchHealerStream({ token: "t", fetchImpl: f }, { code: "X", fightID: 1, healerId: 42 });
+  assert.equal(ev.length, 2);
+  assert.match(JSON.parse(f.calls[1].opts.body).query, /startTime: 500/);
+});
+
+test("gql keeps at most MAX_IN_FLIGHT requests in flight and drains the queue", async () => {
+  let now = 0, peak = 0;
+  const f = async () => {
+    now++; peak = Math.max(peak, now);
+    await new Promise((r) => setTimeout(r, 5));
+    now--;
+    return { ok: true, status: 200, json: async () => ({ data: { ok: true } }) };
+  };
+  const out = await Promise.all(Array.from({ length: 30 }, () => gql({ token: "t", query: "{ x }", fetchImpl: f })));
+  assert.equal(out.length, 30);
+  assert.equal(peak, MAX_IN_FLIGHT);
+  assert.equal(inFlightCount(), 0);
+  // a failure releases its slot too
+  const bad = async () => ({ ok: false, status: 500, json: async () => ({}) });
+  await assert.rejects(gql({ token: "t", query: "{ x }", fetchImpl: bad }), /HTTP 500/);
+  assert.equal(inFlightCount(), 0);
 });

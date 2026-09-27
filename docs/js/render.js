@@ -287,7 +287,8 @@ export function summaryHTML(entries, { level, encounter, encounters }) {
 
 // ------------------------------------------------------------------
 // Set B: the "Key fit" column and its detail panel. fit is what app.js
-// attaches to an entry: { state: "pending"|"ready"|"none", note?,
+// attaches to an entry: { state: "pending"|"partial"|"ready"|"none", note?,
+// ("partial" = the rankings' part is in, the execution measures are loading)
 // assess?: measures.assess() output, provenance?: [{code, fightID, dungeon,
 // level, source}] }
 
@@ -338,7 +339,8 @@ export function fitCellHTML(fit) {
     head = `<span class="muted" title="Not enough of the weight is scoreable yet (${a.present.join(", ") || "nothing"} present)">no composite yet · n ${a.runs}</span>`;
   }
   const flags = (a.flags ?? []).map((f) => `<span class="fit-flag" title="${esc(f.text)}">⚑ ${esc(f.kind)}</span>`).join(" ");
-  return `<div class="fit">${head} ${flags}<div class="fit-chips">${chips}</div></div>`;
+  const loading = fit.state === "partial" ? ` <span class="muted fit-pending fit-partial" title="the execution measures are loading">…</span>` : "";
+  return `<div class="fit">${head}${loading} ${flags}<div class="fit-chips">${chips}</div></div>`;
 }
 
 function deathLine(d, run) {
@@ -350,9 +352,10 @@ function deathLine(d, run) {
 }
 
 export function fitDetailHTML(fit) {
-  if (!fit || fit.state !== "ready" || !fit.assess) return "";
+  if (!fit || (fit.state !== "ready" && fit.state !== "partial") || !fit.assess) return "";
   const a = fit.assess;
   let html = `<div class="fit-detail"><div class="fit-detail-head">Execution (Set B) · ${a.runs} run(s) in the window</div>`;
+  if (fit.state === "partial") html += `<div class="muted fit-pending">execution data loading…</div>`;
   html += `<ul class="fit-measures">`;
   for (const [name, weight] of Object.entries(a.weights ?? {})) {
     const m = a.measures[name];

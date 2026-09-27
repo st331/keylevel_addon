@@ -119,3 +119,15 @@ test("execFromStoredRun maps names to actor ids and keeps nulls", () => {
   assert.equal(exec.rows[1].kicks, null, "bundle not fetched: null, never 0");
   assert.equal(exec.rows[1].role, "dps");
 });
+
+test("run store: parallel lookups on one shard share a single fetch", async () => {
+  let calls = 0;
+  const shard = { built: "2026-09-27T05:00:00Z", runs: {} };
+  const f = async (url) => { calls++; await new Promise((r) => setTimeout(r, 5)); return fakeFetch({ [`https://s/runs/${shardOf("P3j1")}.json.gz`]: shard })(url); };
+  const store = new RunStore({ baseUrl: "https://s/runs", fetchImpl: f, now: () => Date.parse("2026-09-27T06:00:00Z") });
+  const out = await Promise.all(["P3j1a", "P3j1b", "P3j1c"].map((c) => store.lookup(c, 1, 0)));
+  assert.ok(out.every((o) => o.status === "absent"));
+  assert.equal(calls, 1, "three lookups at once, one shard fetch");
+  await store.lookup("P3j1d", 1, 0);
+  assert.equal(calls, 1, "and the shard stays cached afterwards");
+});

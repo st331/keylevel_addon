@@ -32,28 +32,52 @@ export async function getToken({ clientId, clientSecret, tokenUrl = DEFAULT_TOKE
   return { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 };
 }
 
+// Warcraft Logs answers one client's requests in parallel, but past about a
+// dozen in flight each one only waits longer (measured on cold runs: 8
+// single-run requests finish in 2.0 s, 16 in 3.2 s), so the site keeps a
+// ceiling and queues the rest.
+export const MAX_IN_FLIGHT = 12;
+let inFlight = 0;
+const waiting = [];
+async function acquire() {
+  if (inFlight < MAX_IN_FLIGHT) { inFlight++; return; }
+  await new Promise((resolve) => waiting.push(resolve));
+  inFlight++;
+}
+function release() {
+  inFlight--;
+  const next = waiting.shift();
+  if (next) next();
+}
+export const inFlightCount = () => inFlight;
+
 export async function gql({ token, query, apiUrl = DEFAULT_API_URL, fetchImpl = fetch }) {
-  let res;
+  await acquire();
   try {
-    res = await fetchImpl(apiUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query }),
-    });
-  } catch (e) {
-    throw new WclError("could not reach the Warcraft Logs API (network/CORS): " + e.message);
+    let res;
+    try {
+      res = await fetchImpl(apiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query }),
+      });
+    } catch (e) {
+      throw new WclError("could not reach the Warcraft Logs API (network/CORS): " + e.message);
+    }
+    if (res.status === 401) throw new WclError("unauthorized — token expired or invalid; re-check credentials");
+    if (res.status === 429) throw new WclError("rate limited by Warcraft Logs — wait a minute and retry");
+    if (!res.ok) throw new WclError(`Warcraft Logs API returned HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.errors?.length && !json.data) {
+      throw new WclError("API errors: " + json.errors.map((e) => e.message).join("; "));
+    }
+    return json.data;
+  } finally {
+    release();
   }
-  if (res.status === 401) throw new WclError("unauthorized — token expired or invalid; re-check credentials");
-  if (res.status === 429) throw new WclError("rate limited by Warcraft Logs — wait a minute and retry");
-  if (!res.ok) throw new WclError(`Warcraft Logs API returned HTTP ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length && !json.data) {
-    throw new WclError("API errors: " + json.errors.map((e) => e.message).join("; "));
-  }
-  return json.data;
 }
 
 export const ZONES_QUERY = `
@@ -142,24 +166,34 @@ const s = (v) => JSON.stringify(v);
 export const idsExpr = (ids) => `ability.id in (${[...ids].map(Number).filter(Number.isFinite).join(",")})`;
 
 // items: [{ code, fightID, kitIds: Set, dangerousIds: Set|null, avoidableIds: Set|null, tables: bool }]
-export function buildRunBundleQuery(items) {
+// part: "all" (one request holds everything), "events" (the fight plus the
+// event streams) or "tables" (the fight, the actors, the player details and
+// the six tables). WCL works through one request's fields one after the
+// other, so a run that needs both halves is faster as two requests in flight.
+export function buildRunBundleQuery(items, part = "all") {
+  const wantEvents = part !== "tables";
+  const wantTables = part !== "events";
   const parts = items.map((it, i) => {
     const F = `fightIDs: [${Number(it.fightID)}]`;
     const lines = [
       `fights(${F}) { id name startTime endTime keystoneLevel keystoneTime keystoneBonus friendlyPlayers }`,
-      `masterData { actors(type: "Player") { id name subType server } }`,
-      `playerDetails(${F})`,
-      `deaths: events(${F}, dataType: Deaths, hostilityType: Friendlies, limit: 200) { data }`,
-      `low: events(${F}, dataType: DamageTaken, hostilityType: Friendlies, includeResources: true, filterExpression: ${s("resources.hpPercent < 35 and resources.maxHitPoints > 0")}, limit: 10000) { data }`,
-      `ints: events(${F}, dataType: Interrupts, hostilityType: Friendlies, limit: 5000) { data }`,
     ];
-    if (it.kitIds?.size) {
-      lines.push(`kit: events(${F}, dataType: Casts, hostilityType: Friendlies, filterExpression: ${s(idsExpr(it.kitIds))}, limit: 10000) { data }`);
+    if (wantTables) {
+      lines.push(`masterData { actors(type: "Player") { id name subType server } }`);
+      lines.push(`playerDetails(${F})`);
     }
-    if (it.dangerousIds?.size) {
-      lines.push(`begin: events(${F}, dataType: Casts, hostilityType: Enemies, filterExpression: ${s(`${idsExpr(it.dangerousIds)} and (type = "begincast" or type = "cast")`)}, limit: 10000) { data }`);
+    if (wantEvents) {
+      lines.push(`deaths: events(${F}, dataType: Deaths, hostilityType: Friendlies, limit: 200) { data }`);
+      lines.push(`low: events(${F}, dataType: DamageTaken, hostilityType: Friendlies, includeResources: true, filterExpression: ${s("resources.hpPercent < 35 and resources.maxHitPoints > 0")}, limit: 10000) { data }`);
+      lines.push(`ints: events(${F}, dataType: Interrupts, hostilityType: Friendlies, limit: 5000) { data }`);
+      if (it.kitIds?.size) {
+        lines.push(`kit: events(${F}, dataType: Casts, hostilityType: Friendlies, filterExpression: ${s(idsExpr(it.kitIds))}, limit: 10000) { data }`);
+      }
+      if (it.dangerousIds?.size) {
+        lines.push(`begin: events(${F}, dataType: Casts, hostilityType: Enemies, filterExpression: ${s(`${idsExpr(it.dangerousIds)} and (type = "begincast" or type = "cast")`)}, limit: 10000) { data }`);
+      }
     }
-    if (it.tables) {
+    if (wantTables && it.tables) {
       lines.push(`summary: table(${F}, dataType: Summary)`);
       lines.push(`interrupts: table(${F}, dataType: Interrupts)`);
       lines.push(`dispels: table(${F}, dataType: Dispels)`);
@@ -194,14 +228,21 @@ export function parseRunBundle(node) {
   };
 }
 
-// Several runs per request; all requests in flight together.
-export async function fetchRunBundles(ctx, items, perRequest = 4) {
+// One run per request, every request in flight together: WCL answers the
+// fields of one request one after the other, so four runs in one request
+// took 4.3 s where four single-run requests took 2.0 s (cold). A run that
+// also needs its tables goes as two requests (events | tables) whose report
+// nodes are merged before parsing.
+export async function fetchRunBundles(ctx, items, perRequest = 1) {
   const chunks = [];
   for (let i = 0; i < items.length; i += perRequest) chunks.push(items.slice(i, i + perRequest));
   const results = await Promise.all(chunks.map(async (chunk) => {
-    const data = await gql({ ...ctx, query: buildRunBundleQuery(chunk) });
-    const rd = data?.reportData ?? {};
-    return chunk.map((it, i) => ({ ...it, bundle: parseRunBundle(rd[`r${i}`]) }));
+    const parts = perRequest === 1 && chunk[0].tables ? ["events", "tables"] : ["all"];
+    const nodes = await Promise.all(parts.map(async (part) => (await gql({ ...ctx, query: buildRunBundleQuery(chunk, part) }))?.reportData ?? {}));
+    return chunk.map((it, i) => {
+      const found = nodes.map((rd) => rd[`r${i}`]).filter(Boolean);
+      return { ...it, bundle: parseRunBundle(found.length ? Object.assign({}, ...found) : null) };
+    });
   }));
   return results.flat();
 }
@@ -246,7 +287,9 @@ export async function fetchHealerStream(ctx, { code, fightID, healerId }, maxPag
   let startTime = null;
   for (let page = 0; page < maxPages; page++) {
     const st = startTime === null ? "" : `, startTime: ${Math.floor(startTime)}`;
-    const query = `query { reportData { report(code: ${s(code)}) { heal: events(fightIDs: [${Number(fightID)}], dataType: Healing, sourceID: ${Number(healerId)}, includeResources: true, limit: 10000${st}) { data nextPageTimestamp } } } }`;
+    // triage reads only when a heal landed and on whom: no resources (they
+    // double the bytes and the server time) and no absorbs
+    const query = `query { reportData { report(code: ${s(code)}) { heal: events(fightIDs: [${Number(fightID)}], dataType: Healing, sourceID: ${Number(healerId)}, filterExpression: ${s('type = "heal"')}, limit: 10000${st}) { data nextPageTimestamp } } } }`;
     const data = await gql({ ...ctx, query });
     const blob = data?.reportData?.report?.heal;
     all.push(...ev(blob));

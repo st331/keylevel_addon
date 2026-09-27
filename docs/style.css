@@ -171,6 +171,7 @@ footer .muted{ font-size:.78rem }
 .fit{ display:flex; flex-direction:column; gap:4px; min-width:170px }
 .fit-score{ font-size:1.05rem }
 .fit-pending{ font-style:italic }
+.fit-partial{ opacity:.7 }
 .fit-chips{ display:flex; flex-wrap:wrap; gap:4px }
 .fit-chip{
   font-size:.62rem; font-weight:700; letter-spacing:.04em; padding:.05rem .32rem;
