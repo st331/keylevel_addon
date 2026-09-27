@@ -432,12 +432,11 @@ test("fitDetailHTML lists measures, classified deaths and provenance", () => {
     state: "ready",
     provenance: [{ code: "A", fightID: 1, source: "store" }, { code: "B", fightID: 2, source: "live" }, { code: "C", fightID: 3, source: "cached" }],
     assess: {
-      runs: 3, weights: { damage: 50, deaths: 10 }, present: ["damage"], flags: [{ kind: "potions", text: "potion in only 20 % of logged runs" }],
+      runs: 3, weights: { damage: 50, deaths: 10 }, present: ["damage"], flags: [{ kind: "deaths", text: "repeated own-fault deaths" }],
       composite: null,
       measures: {
         damage: { n: 3, pct: 60, z: 0.2, plusMinus: { delta: 4.2, n: 2 } },
         deaths: { n: 3, z: 0, W: 1.1, allowance: 1.75, excess: 0, loss01: 0, perRun: [{ dungeon: "Windrunner Spire", level: 12, start: Date.UTC(2026, 8, 20), deaths: [{ cls: "solo", cost: 1, rel: 1230.7, reasons: ["5.3 s of warning, Spell Reflection available and unused"] }, { cls: "chain", cost: 0.1, rel: 177.1, reasons: ["1 party death(s) in the prior 5 s"] }] }] },
-        potions: { n: 5, share: 0.2, pass: false },
       },
     },
   };
@@ -447,7 +446,8 @@ test("fitDetailHTML lists measures, classified deaths and provenance", () => {
   assert.match(html, /Deaths, classified/);
   assert.match(html, /death-solo">solo<\/span> Windrunner Spire \+12 <span class="muted">2026-09-20 20:30<\/span>/);
   assert.match(html, /Spell Reflection available and unused/);
-  assert.match(html, /gate failed: −3/);
+  assert.match(html, /repeated own-fault deaths/);
+  assert.ok(!/POTIONS/.test(html), "no potion line: the gate is gone");
   assert.match(html, /1 store · 1 live · 1 cached/);
   assert.equal(fitDetailHTML({ state: "pending" }), "");
 });
