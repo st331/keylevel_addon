@@ -274,6 +274,9 @@ export function deathAllowance(perRun) {
 // something. episode = ≥ 2 sub-35 % hits ≥ 1.5 s apart within 8 s.
 export function selfSave(run, kit) {
   if (run.spec === "Blood") return { excluded: "Blood DK lives below 35 %" };
+  // no kit list for the spec: we cannot see their buttons, so no verdict
+  // (scoring every episode as unanswered would punish every unlisted spec)
+  if (!kit?.known || !kit.kit?.size) return null;
   const self = run.selfId;
   const lows = (run.events?.low35 ?? []).filter((e) => e.targetID === self && hpFrac(e) !== null && hpFrac(e) < 0.35).sort((a, b) => a.timestamp - b.timestamp);
   if (!run.events?.low35) return null;
