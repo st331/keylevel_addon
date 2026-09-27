@@ -125,6 +125,13 @@ pulls only what nobody else fetches (death windows, low-HP episodes, casts),
 and every analysed run is remembered in your browser for two weeks. The
 **⚔ Key fit** button turns the column off if you only want Key %.
 
+Key fit is built to keep up with a queue of applicants. The DMG part is on
+screen with the row itself (the rankings already hold it); the execution
+measures follow, one Warcraft Logs request per run with every request in
+flight together, so a new applicant is usually complete two to three
+seconds later — and at once on a second look, because every analysed run is
+remembered for two weeks.
+
 ### Playing nice with other addons
 
 The addon never touches the Blizzard group-finder frames, never hooks other

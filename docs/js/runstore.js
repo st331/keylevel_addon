@@ -28,6 +28,7 @@ export class RunStore {
     this.fetchImpl = fetchImpl;
     this.now = now;
     this.shards = new Map(); // c -> { at, doc|null }
+    this.inflight = new Map(); // c -> promise, so parallel lookups share one fetch
     this.built = null;       // newest build time seen (ms)
     this.available = null;   // false once a shard fetch failed outright (no store deployed)
   }
@@ -35,6 +36,14 @@ export class RunStore {
   async shard(c) {
     const hit = this.shards.get(c);
     if (hit && this.now() - hit.at < SHARD_TTL) return hit.doc;
+    const pending = this.inflight.get(c);
+    if (pending) return pending;
+    const p = this.fetchShard(c).finally(() => this.inflight.delete(c));
+    this.inflight.set(c, p);
+    return p;
+  }
+
+  async fetchShard(c) {
     let doc = null;
     try {
       doc = await fetchGzJson(`${this.baseUrl}${c}.json.gz`, this.fetchImpl);
