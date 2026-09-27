@@ -1,6 +1,6 @@
 // runstore.js — the per-run rows the wowlogs collector already fetched
-// (design/baselines-from-wowlogs.md §3), sharded by the first character of
-// the report code. Reading a run from here is what keeps the no-repeat rule:
+// (design/baselines-from-wowlogs.md §3), in 256 shards by a hash of the
+// report code. Reading a run from here is what keeps the no-repeat rule:
 // a run in the store is never pulled from Warcraft Logs again by this site.
 
 import { fetchGzJson } from "./baselines.js";
@@ -12,9 +12,14 @@ export const DEFAULT_RUNSTORE_URL = "https://st331.github.io/wowlogs/runs/";
 export const SWEEP_LAG_MS = 3 * 3600_000;
 const SHARD_TTL = 30 * 60_000;
 
+// 256 shards by a hash of the report code (the same function runs in the
+// collector): h = (h * 31 + charCode) mod 256 over the first four characters.
 export function shardOf(code) {
-  const c = String(code ?? "")[0];
-  return c && /[A-Za-z0-9]/.test(c) ? c : null;
+  const c = String(code ?? "");
+  if (!c) return null;
+  let h = 0;
+  for (let i = 0; i < Math.min(4, c.length); i++) h = (h * 31 + c.charCodeAt(i)) % 256;
+  return h.toString(16).padStart(2, "0");
 }
 
 export class RunStore {

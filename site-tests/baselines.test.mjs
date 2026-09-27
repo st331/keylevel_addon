@@ -87,22 +87,27 @@ test("run store: stored / pending / absent, and the shard is fetched once", asyn
   const built = Date.parse("2026-09-27T05:00:00Z");
   const shard = { built: "2026-09-27T05:00:00Z", runs: { "P3j1myqhvQcMp6Tk:8": { dun: "Altar of Fangs", lvl: 16, dur_s: 1604, timed: true, exec: true, players: [{ name: "Genjibb", server: "Area 52", class: "Warrior", spec: "Arms", role: "DPS", dps: 312375, deaths: 2, kicks: 23, kicks_by: { 1294557: 12 } }] } } };
   let calls = 0;
-  const f = async (url) => { calls++; return fakeFetch({ "https://s/runs/P.json.gz": shard })(url); };
+  const f = async (url) => { calls++; return fakeFetch({ [`https://s/runs/${shardOf("P3j1myqhvQcMp6Tk")}.json.gz`]: shard })(url); };
   const store = new RunStore({ baseUrl: "https://s/runs", fetchImpl: f, now: () => built + 3600_000 });
   const a = await store.lookup("P3j1myqhvQcMp6Tk", 8, built - 86_400_000);
   assert.equal(a.status, "stored");
   assert.equal(a.run.players[0].name, "Genjibb");
-  const b = await store.lookup("Pother", 1, built - 86_400_000);
+  const same = shardOf("P3j1myqhvQcMp6Tk");
+  const b = await store.lookup("P3j1other", 1, built - 86_400_000); // same shard (first four chars)
   assert.equal(b.status, "absent", "old run not in the store: wowlogs will never fetch it");
-  const c = await store.lookup("Pnew", 1, built - 3600_000);
+  const c = await store.lookup("P3j1new", 1, built - 3600_000);
   assert.equal(c.status, "pending", "a run one hour before the build may not be swept yet");
-  const d = await store.lookup("Pnew", 1, built - SWEEP_LAG_MS - 1);
+  const d = await store.lookup("P3j1new", 1, built - SWEEP_LAG_MS - 1);
   assert.equal(d.status, "absent");
   assert.equal(calls, 1, "one shard fetch for four lookups");
-  const e = await store.lookup("Zzz", 1, built - 86_400_000);
+  const e = await store.lookup("Zzz9", 1, built - 86_400_000);
   assert.equal(e.status, "absent", "a missing shard reads as absent");
-  assert.equal(shardOf("P3j1"), "P");
+  assert.match(same, /^[0-9a-f]{2}$/);
+  assert.equal(shardOf("P3j1myqhvQcMp6Tk"), same, "hash depends on the first four characters only");
   assert.equal(shardOf(""), null);
+  // the reference implementation: h = (h*31 + charCode) % 256 over 4 chars
+  let h = 0; for (const ch of "P3j1") h = (h * 31 + ch.charCodeAt(0)) % 256;
+  assert.equal(same, h.toString(16).padStart(2, "0"));
 });
 
 test("execFromStoredRun maps names to actor ids and keeps nulls", () => {
