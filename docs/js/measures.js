@@ -671,7 +671,8 @@ export function assess(facts, role, deps = {}) {
     const allowance = deathAllowance(known);
     const z = known.length >= SET_B.minRuns.deaths ? -2 * allowance.loss01 : null;
     if (allowance.repeated) flags.push({ kind: "deaths", text: "repeated own-fault deaths" });
-    if (allowance.sameCause.length) flags.push({ kind: "deaths", text: "died to the same ability more than once" });
+    // dying to the same ability twice is circumstance as often as habit:
+    // it stays visible in the classified death list, never as a flag
     measures.deaths = { n: known.length, z, ...allowance, perRun: known };
   }
 
