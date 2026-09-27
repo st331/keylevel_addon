@@ -190,6 +190,7 @@ test("self-save: the rogue never pressed anything, Blood is excluded", () => {
   assert.ok(warrior.episodes >= 1);
   assert.ok(warrior.rate === null || (warrior.rate >= 0 && warrior.rate <= 1));
   assert.equal(selfSave(runFor(1, { events: null }), kitFor(LISTS, "Warrior", "Arms")), null, "no events, no verdict");
+  assert.equal(selfSave(runFor(1), kitFor(LISTS, "Mage", "Fire")), null, "no kit list for the spec: no verdict, never a zero");
 });
 
 // ------------------------------------------------------------ kicks
