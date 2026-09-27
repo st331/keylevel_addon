@@ -369,7 +369,6 @@ export function fitDetailHTML(fit) {
     const extra = name === "damage" && m?.plusMinus?.delta !== null && m?.plusMinus?.delta !== undefined ? ` · plus-minus ${m.plusMinus.delta >= 0 ? "+" : ""}${m.plusMinus.delta.toFixed(1)} pp over ${m.plusMinus.n} run(s)` : "";
     html += `<li><b>${label}</b> <span class="muted">w${weight}</span> — ${text}${esc(extra)}</li>`;
   }
-  if (a.measures.potions) html += `<li><b>POTIONS</b> — potion used in ${Math.round(a.measures.potions.share * 100)} % of ${a.measures.potions.n} runs${a.measures.potions.pass ? "" : " (gate failed: −3)"}</li>`;
   html += `</ul>`;
   const deaths = (a.measures.deaths?.perRun ?? []).flatMap((r) => (r.deaths ?? []).map((d) => deathLine(d, r)));
   if (deaths.length) html += `<div class="fit-detail-sub">Deaths, classified</div><ul class="fit-deaths">${deaths.join("")}</ul>`;

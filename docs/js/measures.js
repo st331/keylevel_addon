@@ -587,8 +587,9 @@ export function assess(facts, role, deps = {}) {
   const w = facts.map((f) => recencyWeight(f.start, now));
   const measures = {};
   const flags = [];
+  // a recurring core only switches the share measures off: it says nothing
+  // about the player, so it is not a flag
   const recurring = recurringFromFacts(facts);
-  if (recurring.length) flags.push({ kind: "recurring", text: `plays with ${recurring.length} recurring teammate(s): share measures off` });
   const perMin = (v, f) => (typeof v === "number" && f.durationS) ? v / (f.durationS / 60) : null;
 
   // damage
@@ -627,7 +628,7 @@ export function assess(facts, role, deps = {}) {
     facts.forEach((f, i) => {
       const u = f.kicks;
       if (u && u.utilisation !== null && u.utilisation !== undefined && u.opportunities >= 2) { util.push(u.utilisation); utilW.push(w[i]); }
-      const cell = deps.baselines?.cellFor?.(`${f.cls}-${f.spec}`, f.dungeon, f.level);
+      const cell = deps.baselines?.cellFor?.(`${f.cls}-${f.spec}`, f.dungeon, f.level, "kick_prio");
       const v = kickPrioPerMinFromFacts(f, deps.priority?.[f.dungeon]);
       if (cell && v !== null) { const p = deps.baselines.percentile(cell, "kick_prio", v); if (p !== null) { rate.push(p); rateW.push(w[i]); } }
     });
@@ -681,7 +682,7 @@ export function assess(facts, role, deps = {}) {
     const pcts = [], pw = [];
     facts.forEach((f, i) => {
       if (!f.own || f.own.avoid_dmg == null) return;
-      const cell = deps.baselines?.cellFor?.(`${f.cls}-${f.spec}`, f.dungeon, f.level);
+      const cell = deps.baselines?.cellFor?.(`${f.cls}-${f.spec}`, f.dungeon, f.level, "avoid_dmg_min");
       if (!cell) return;
       const p = deps.baselines.percentile(cell, "avoid_dmg_min", perMin(f.own.avoid_dmg, f));
       if (p !== null) { pcts.push(p); pw.push(w[i]); }
@@ -707,7 +708,7 @@ export function assess(facts, role, deps = {}) {
     {
       const pcts = [], pw = [], missed = [];
       facts.forEach((f, i) => {
-        const cell = deps.baselines?.cellFor?.(`${f.cls}-${f.spec}`, f.dungeon, f.level);
+        const cell = deps.baselines?.cellFor?.(`${f.cls}-${f.spec}`, f.dungeon, f.level, "dispels_min");
         if (f.own && f.own.dispels != null && cell) {
           const p = deps.baselines.percentile(cell, "dispels_min", perMin(f.own.dispels, f));
           if (p !== null) { pcts.push(p); pw.push(w[i]); }
@@ -734,16 +735,6 @@ export function assess(facts, role, deps = {}) {
     }
   }
 
-  // potions gate
-  {
-    const known = facts.map((f) => f.own?.pots).filter((p) => typeof p === "number");
-    if (known.length >= 3) {
-      const share = known.filter((p) => p >= 1).length / known.length;
-      measures.potions = { n: known.length, share, pass: share >= 0.6 };
-      if (!measures.potions.pass) flags.push({ kind: "potions", text: `potion in only ${Math.round(share * 100)} % of logged runs` });
-    }
-  }
-
   // composite
   let sumW = 0, sumWZ = 0;
   const present = [], missing = [];
@@ -755,8 +746,7 @@ export function assess(facts, role, deps = {}) {
   let composite = null;
   if (sumW >= SET_B.presentWeight && present.includes("damage")) {
     const z = sumWZ / sumW;
-    let pct = zToPct(z);
-    if (measures.potions && !measures.potions.pass) pct -= 3;
+    const pct = zToPct(z);
     composite = { z, pct: clamp(pct, 1, 99), presentWeight: sumW, nEff: measures.damage.nEff };
   }
   return { role, runs: facts.length, measures, composite, present, missing, flags, weights };

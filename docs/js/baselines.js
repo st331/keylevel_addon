@@ -31,9 +31,16 @@ export function makeBaselines(doc) {
   if (!doc || typeof doc !== "object" || !doc.cells || !Array.isArray(doc.quantiles)) return null;
   const q = doc.quantiles;
   const band = (level) => `b${Math.floor(level / 2) * 2}`;
+  const EXEC_MEASURES = ["kicks_min", "kick_prio", "dispels_min", "avoid_dmg_min", "def_casts_min", "heal_eff_s"];
+  const nRows = (c, measure) => (EXEC_MEASURES.includes(measure) ? (c.n_exec ?? 0) : (c.n ?? 0));
   const get = (key, minN) => {
     const c = doc.cells[key];
     return c && typeof c.n === "number" && c.n >= minN ? c : null;
+  };
+  const getFor = (key, measure, minN) => {
+    const c = doc.cells[key];
+    if (!c || !Array.isArray(c[measure])) return null;
+    return nRows(c, measure) >= minN ? c : null;
   };
   return {
     built: doc.built ?? null,
@@ -43,8 +50,12 @@ export function makeBaselines(doc) {
     measures: doc.measures ?? {},
     priority: doc.priority ?? {},
     dispellable: doc.dispellable ?? {},
-    // spec is "Class-Spec"; returns { ...cell, key, tier } or null
-    cellFor(spec, dungeon, level) {
+    // spec is "Class-Spec"; returns { ...cell, key, tier } or null. With a
+    // measure, the ladder counts that measure's own rows (n_exec for the
+    // bundle measures) and skips a cell that has no quantiles for it, so an
+    // execution measure is judged against the finest cell that can judge
+    // it — the pooled spec × band cell fills weeks before the exact one.
+    cellFor(spec, dungeon, level, measure = null) {
       if (!spec || !Number.isInteger(level)) return null;
       const tries = [
         dungeon ? [`${spec}|${dungeon}|${level}`, "exact", EXACT_MIN_N] : null,
@@ -52,7 +63,7 @@ export function makeBaselines(doc) {
         [`${spec}|*|${band(level)}`, "pooled", POOLED_MIN_N],
       ].filter(Boolean);
       for (const [key, tier, minN] of tries) {
-        const c = get(key, minN);
+        const c = measure ? getFor(key, measure, minN) : get(key, minN);
         if (c) return { ...c, key, tier, q };
       }
       return null;
@@ -69,11 +80,7 @@ export function makeBaselines(doc) {
       return robustZ(q, cell[measure], value);
     },
     // how many rows back the measure in this cell (n_exec for bundle measures)
-    nFor(cell, measure) {
-      if (!cell) return 0;
-      const exec = ["kicks_min", "kick_prio", "dispels_min", "avoid_dmg_min", "def_casts_min", "heal_eff_s"];
-      return exec.includes(measure) ? (cell.n_exec ?? 0) : (cell.n ?? 0);
-    },
+    nFor(cell, measure) { return cell ? nRows(cell, measure) : 0; },
     // the dungeon's dangerous casts: kicked at least half the time by the population
     dangerousFor(dungeon, minBegun = 10) {
       const out = new Set();

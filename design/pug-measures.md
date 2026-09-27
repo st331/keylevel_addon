@@ -154,3 +154,18 @@ Unverified: `historicalPercent`'s reference pool (used only for depleted runs); 
 ## 8. Build first
 
 Build Set A first: it works the day the sidecar exists because its damage and death cells need no bundle, costs≈40 pts and two round-trips per applicant, uses no hand-curated list, and already meets the brief — 66% of a DPS applicant's composite is the one signal with a measured own-share of 0.66, and the tables-only death rule makes a one-off free; its kick and dispel cells fill within days under the quota gate. Then add Set B's applicant-side signals in the order death windows→kick opportunities→self-save→healer triage, behind the second WCL client (Set B is 100–150 pts per applicant); promote to Set C only after the tank-buster and boss lists are curated and the collector exports `am_uptime`, `boss_share` and `cc_casts_min`, since Set C's extra rows are the most curation-dependent and least own-controlled.
+
+
+## Revisions after use
+
+- **Flags.** Only "repeated own-fault deaths" is shown. Dying to the same
+  ability twice is recorded but not flagged (circumstance as often as habit).
+  A recurring core is detected only to switch the share measures off; it says
+  nothing about the player, so it is not a flag.
+- **Potion gate dropped.** Potion use is preparation, not ability, and the −3
+  was a weak signal in +10 pugs. Potions still count as a self-save when one
+  answers a low-HP episode.
+- **Cell ladder per measure.** An execution measure is judged against the
+  finest cell that has quantiles for it and enough bundled rows (`n_exec`),
+  so the pooled spec × band cell serves it weeks before the exact cell does;
+  damage keeps its own ladder on `n`.

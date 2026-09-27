@@ -14,6 +14,11 @@ const DOC = {
     "Warrior-Arms|*|b18": { n: 9800, dps: [280000, 300000, 320000, 340000, 360000, 380000, 395000] },
     "Warrior-Fury|Altar of Fangs|b18": { n: 46, dps: [333456, 341546, 352315, 376071, 399922, 413302, 417087] },
     "Warrior-Fury|*|b18": { n: 306, dps: [236979, 256683, 298668, 330120, 356780, 386792, 402222] },
+    // the execution measures fill the pooled cell first: the exact +12 cell has
+    // 900 timed rows but 4 bundled ones, the pooled band cell 61 bundled rows
+    "Mage-Arcane|Altar of Fangs|12": { n: 900, n_exec: 4, dps: [1, 2, 3, 4, 5, 6, 7] },
+    "Mage-Arcane|Altar of Fangs|b12": { n: 1800, n_exec: 9, dps: [1, 2, 3, 4, 5, 6, 7] },
+    "Mage-Arcane|*|b12": { n: 5000, n_exec: 61, dps: [1, 2, 3, 4, 5, 6, 7], avoid_dmg_min: [100, 200, 400, 800, 1600, 3200, 6400], kick_prio: [0, 0.1, 0.2, 0.4, 0.6, 0.8, 1] },
   },
   priority: { "Altar of Fangs": { 1294557: { name: "Piercing Hiss", begun: 15320, completed: 812, interrupted: 13990 }, 1306381: { name: "Fetid Spit", begun: 12000, completed: 10800, interrupted: 1200 }, 999: { begun: 3, completed: 0, interrupted: 3 } } },
 };
@@ -130,4 +135,20 @@ test("run store: parallel lookups on one shard share a single fetch", async () =
   assert.equal(calls, 1, "three lookups at once, one shard fetch");
   await store.lookup("P3j1d", 1, 0);
   assert.equal(calls, 1, "and the shard stays cached afterwards");
+});
+
+test("an execution measure is judged in the finest cell that has it, damage stays in the exact cell", () => {
+  const b = makeBaselines(DOC);
+  assert.equal(b.cellFor("Mage-Arcane", "Altar of Fangs", 12).tier, "exact", "damage: 900 timed rows at the exact level");
+  assert.equal(b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "dps").tier, "exact");
+  const c = b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "avoid_dmg_min");
+  assert.equal(c.tier, "pooled", "the exact and band cells have no avoidable-damage quantiles yet");
+  assert.equal(b.nFor(c, "avoid_dmg_min"), 61);
+  assert.equal(b.percentile(c, "avoid_dmg_min", 800), 50);
+  assert.equal(b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "kick_prio").tier, "pooled");
+  assert.equal(b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "dispels_min"), null, "no cell can judge dispels yet");
+  // once the exact cell has the measure with enough bundled rows, it wins again
+  const c2 = b.cellFor("Warrior-Arms", "Altar of Fangs", 18, "avoid_dmg_min");
+  assert.equal(c2.tier, "exact");
+  assert.equal(b.nFor(c2, "avoid_dmg_min"), 300);
 });

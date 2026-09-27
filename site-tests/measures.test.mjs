@@ -263,7 +263,8 @@ test("assess: six runs of the warrior — damage from Key % without baselines, d
   assert.equal(a.measures.deaths.z, -2);
   assert.ok(a.flags.some((f) => f.kind === "deaths" && /repeated/.test(f.text)));
   assert.ok(!a.flags.some((f) => /same ability/.test(f.text)), "the same killing ability twice is not a flag");
-  assert.ok(a.flags.some((f) => f.kind === "recurring"), "the same four teammates six times");
+  assert.ok(!a.flags.some((f) => f.kind === "recurring"), "the same four teammates six times switches the share measures off, but is not a flag");
+  assert.deepEqual(a.flags.map((f) => f.kind), ["deaths"], "the only flag left is the one about the player");
   assert.equal(a.measures.kicks.mode, "utilisation");
   assert.ok(a.measures.kicks.z !== null);
   assert.equal(a.measures.avoidable.z, null, "no cell, no tables: not scored");
@@ -285,7 +286,7 @@ test("assess: with baselines the damage percentile comes from the cell and the r
   assert.equal(a.measures.deaths.loss01, 0.25);
   assert.equal(a.measures.deaths.z, -0.5);
   assert.ok(a.measures.avoidable.pct !== null, "avoidable damage scored against the cell");
-  assert.ok(a.measures.potions.pass);
+  assert.equal(a.measures.potions, undefined, "no potion gate: preparation is not ability");
   assert.equal(a.measures.selfsave.n, 5);
   assert.ok(a.composite);
 });
