@@ -96,6 +96,35 @@ the listing's activity, level parsed from a "+13" in its title), which beats
 your own keystone. `/kll auto` resets. You can also change level/dungeon on
 the website at any time and re-run.
 
+### Key fit (the execution measures)
+
+Next to the Key % columns, **Key fit** judges each applicant on what a PUG
+actually needs from them, using their newest runs at your key level ± 2:
+
+- **DMG** — damage vs players of the same spec in timed runs of that dungeon
+  and level (recency-weighted median over their runs, never the best run).
+- **KICK** — dangerous casts interrupted when their kick was up and nobody
+  else could (the population's own kick rate decides what is "dangerous").
+- **SAVE** — when they dropped under 35 % for 1.5 s or more, did they press a
+  defensive, self-heal, healthstone or potion.
+- **DEATHS** — own-fault deaths beyond an allowance of one plus a quarter per
+  run. Chain deaths, one-shots and deaths while the healer was down or two
+  others were already low never count; the first solo death is free.
+- **AVOID** — avoidable damage taken per minute (a curated list per dungeon).
+- Healers: **TRIAGE** (seconds from an ally dropping under 35 % to a direct
+  heal on them) and **DISPEL** instead of HPS, which mostly measures how bad
+  the rest of the group was.
+
+The weights, the death rule and why each measure was chosen are in
+[`design/pug-measures.md`](design/pug-measures.md); the evidence behind them
+was collected from real Season 2 logs. Population baselines and per-run
+tables come from the companion collector (`st331/wowlogs`,
+[`design/baselines-from-wowlogs.md`](design/baselines-from-wowlogs.md)):
+a run it already holds is never pulled from Warcraft Logs again, this site
+pulls only what nobody else fetches (death windows, low-HP episodes, casts),
+and every analysed run is remembered in your browser for two weeks. The
+**⚔ Key fit** button turns the column off if you only want Key %.
+
 ### Playing nice with other addons
 
 The addon never touches the Blizzard group-finder frames, never hooks other
@@ -142,7 +171,11 @@ KeyLevelLogs/       the addon (copy into Interface/AddOns)
 docs/               the website (GitHub Pages serves this folder)
   index.html
   style.css
-  js/               app wiring + pure modules (wcl api, transforms, rendering)
+  js/               app wiring + pure modules (wcl api, transforms, rendering,
+                    measures/fit/stats for Key fit, baselines + run store readers)
+  data/lists.json   curated spell lists (kits per spec, avoidable/dangerous per
+                    dungeon) — the single copy both this site and the collector use
+design/             the measure sets and the collector contract
 tests/              addon test harness (WoW API mock) + suites + demo
 site-tests/         website unit tests + real-browser e2e
 scripts/test.sh     run everything
@@ -156,11 +189,13 @@ scripts/test.sh     run everything
 - A player who doesn't log shows `no WCL character` even if experienced —
   same answer the website gives. Data is per character: alts look like new
   players.
-- Your API client allows 3,600 points/hour — far more than a night of
-  key-running needs. The site sends every character's request in parallel,
-  batches all dungeons per character into single requests, and caches the
-  token (~1 year), the season list (3h), and each looked-up character (1h —
-  **⟳ Fresh data** re-fetches). The season is auto-detected, so a new
+- The API client allows 18,000 points/hour, shared with the wowlogs collector
+  (which spends ~10,000 of them). Key % costs 8 points per character; Key fit
+  adds roughly 7 points per analysed run (about 60 per new applicant, nothing
+  for runs already seen). The site sends every character's request in
+  parallel, batches all dungeons per character into single requests, and
+  caches the token (~1 year), the season list (3h), each looked-up character
+  (1h — **⟳ Fresh data** re-fetches) and each analysed run (14 days). The season is auto-detected, so a new
   Mythic+ season needs no update here: the dungeon list follows within the
   season cache's 3 hours.
 - The Warcraft Logs API's browser access (CORS) is intentional but not
