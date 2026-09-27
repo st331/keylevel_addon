@@ -48,6 +48,7 @@
         <button id="lookup" title="Pasting already runs the lookup — this is here for a re-run. Results are cached for an hour; Shift-click for fresh data">Look up</button>
         <button id="refresh" class="ghost" title="Re-fetch everyone now, ignoring the hour cache">⟳ Fresh data</button>
         <button id="autopaste" class="ghost" type="button">⧉ Auto-paste off</button>
+        <button id="fit" class="ghost on" type="button">⚔ Key fit on</button>
       </div>
     </div>
   </section>
@@ -81,6 +82,19 @@
       run rather than only the ones uploaded to Warcraft Logs. Hover for the tank/healer/dps
       split. Account-wide "warband" scores aren't published for other players, so these are
       per character.</p>
+    <p class="muted"><b>Key fit</b> is the execution score for a PUG: a weighted composite,
+      shown as a percentile among players of the role, of <em>DMG</em> (damage vs players of the
+      same spec in timed runs of that dungeon and level, recency-weighted median), <em>KICK</em>
+      (dangerous casts interrupted when the kick was up and nobody else could), <em>SAVE</em>
+      (pressed a defensive, self-heal, healthstone or potion when under 35 %), <em>DEATHS</em>
+      (own-fault deaths beyond an allowance of one plus a quarter per run — chain deaths, one-shots
+      and deaths while the healer was down or two others were already low never count, and the first
+      solo death is free), <em>AVOID</em> (avoidable damage per minute vs the cell) and, for healers,
+      <em>TRIAGE</em> (seconds from an ally dropping under 35 % to a direct heal) and <em>DISPEL</em>.
+      Weights and rules: <a href="https://github.com/st331/keylevel_addon/blob/main/design/pug-measures.md" target="_blank" rel="noopener">design/pug-measures.md</a>.
+      Baselines are the newest two weeks of timed leaderboard runs from the companion collector, so
+      percentiles are conservative. Runs already held by that collector are never pulled from
+      Warcraft Logs again; each applicant's newest runs are analysed once and remembered for two weeks.</p>
     <p class="muted">Colors are Warcraft Logs tiers · a player with no rows simply doesn’t log ·
       looked-up characters are cached in your browser for an hour —
       <em>⟳&nbsp;Fresh&nbsp;data</em> (or Shift-click <em>Look&nbsp;up</em>) re-fetches everyone ·

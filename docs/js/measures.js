@@ -124,7 +124,7 @@ export function calibrateCooldowns(runs, ids) {
       }
     }
   }
-  return { minGap, seen };
+  return { minGap, seen: [...seen] }; // an array: facts are cached as JSON
 }
 
 // ------------------------------------------------------------ deaths
@@ -212,7 +212,7 @@ export function classifyDeath(run, death, ctx) {
     const casts = (run.events?.kitCasts ?? []).filter((e) => e.sourceID === self && e.type === "cast");
     const usedRecently = casts.some((e) => kit.kit.has(e.abilityGameID) && e.timestamp >= t - 10_000 && e.timestamp <= t);
     for (const [id, spell] of kit.kit) {
-      if (!spell.baseline && !ctx?.seen?.has(id)) continue; // talent spell never seen: assume untalented
+      if (!spell.baseline && !seenHas(ctx?.seen, id)) continue; // talent spell never seen: assume untalented
       const last = casts.filter((e) => e.abilityGameID === id && e.timestamp < t).pop();
       const cd = Math.min(spell.cd ?? 0, ctx?.calib?.[id] ?? Infinity);
       if (!last || (t - last.timestamp) / 1000 >= cd) out.available.push(spell.name);
@@ -496,6 +496,9 @@ export function mergeCastStats(list) {
   }
   return { minGap, seen };
 }
+
+// accept a Set or an array of ids
+const seenHas = (seen, id) => (seen instanceof Set ? seen.has(id) : Array.isArray(seen) ? seen.includes(id) : false);
 
 export function runFacts(run, ctx = {}) {
   const kit = ctx.kit ?? kitFor(null);

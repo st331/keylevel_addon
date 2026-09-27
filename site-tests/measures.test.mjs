@@ -293,6 +293,9 @@ test("facts survive a JSON round-trip (the 14-day per-run cache)", () => {
   const back = JSON.parse(JSON.stringify(facts));
   const a = assess(back, "dps", {});
   assert.equal(a.measures.deaths.perRun[0].deaths.length, 2);
+  const merged = mergeCastStats(back.map((f) => f.casts));
+  assert.ok(merged.seen.has(23920), "seen spells survive the round trip (a Set would have become {})");
+  assert.ok(merged.minGap[23920] > 0);
   assert.ok(JSON.stringify(facts[0]).length < 20_000, "small enough to cache many of them");
 });
 

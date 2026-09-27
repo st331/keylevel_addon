@@ -12,6 +12,9 @@ import { summaryHTML } from "./render.js";
 import { embeddedCredentials } from "./config.js";
 import { cacheKey, pruneCache, slimResult } from "./cache.js";
 import { fetchScores, DEFAULT_RIO_URL } from "./rio.js";
+import { assessEntry, loadLists } from "./fit.js";
+import { loadBaselines, DEFAULT_BASELINES_URL } from "./baselines.js";
+import { RunStore, DEFAULT_RUNSTORE_URL } from "./runstore.js";
 
 const LEVEL_WINDOW = 4; // only key levels within ±4 of the target matter
 
@@ -33,15 +36,22 @@ const LS = {
   apiUrl: "kllApiUrl",
   rioUrl: "kllRioUrl",
   autoPaste: "kllAutoPaste",
+  fit: "kllFit",
+  baselinesUrl: "kllBaselinesUrl",
+  runStoreUrl: "kllRunStoreUrl",
+  listsUrl: "kllListsUrl",
 };
 
 const rioEndpoint = () => localStorage.getItem(LS.rioUrl) || DEFAULT_RIO_URL;
+const baselinesUrl = () => localStorage.getItem(LS.baselinesUrl) || DEFAULT_BASELINES_URL;
+const runStoreUrl = () => localStorage.getItem(LS.runStoreUrl) || DEFAULT_RUNSTORE_URL;
+const listsUrl = () => localStorage.getItem(LS.listsUrl) || "data/lists.json";
 
 // ------------------------------------------------- per-character cache
 
 // bumping this discards every previously stored cache on the next visit
-// (3: entries now also carry Raider.IO season scores)
-const CHAR_CACHE_VERSION = 3;
+// (4: ranks keep medal + duration for the execution measures)
+const CHAR_CACHE_VERSION = 4;
 
 function loadCharCache() {
   try {
@@ -306,8 +316,10 @@ async function lookup(ev) {
         region: regions.get(k),
       };
     });
-    lastRender = { entries, level, encounter, encounters: zone.encounters };
+    lastRender = { entries, level, encounter, encounters: zone.encounters, results, ctx };
     renderResults();
+    // the execution measures (Key fit) fill in afterwards, row by row
+    computeFits(entries, results, zone, level, ctx);
 
     // make the current lookup shareable (same format the addon generates);
     // original tokens are kept so pasted URLs keep their region/realm
@@ -330,6 +342,62 @@ async function lookup(ev) {
     $("lookup").disabled = false;
     $("refresh").disabled = false;
   }
+}
+
+// ------------------------------------------------------------ key fit
+//
+// Set B (design/pug-measures.md): once the Key % table is on screen, each
+// applicant's execution measures are computed from their newest runs at the
+// listing level. Population baselines and the per-run store come from the
+// wowlogs collector; only what nobody else fetches is pulled live.
+
+let fitOn = true;
+let fitGeneration = 0;
+const runStores = new Map(); // baseUrl -> RunStore (keeps its shard cache)
+
+function storeFor(baseUrl) {
+  if (!runStores.has(baseUrl)) runStores.set(baseUrl, new RunStore({ baseUrl }));
+  return runStores.get(baseUrl);
+}
+
+function setFitUI() {
+  const btn = $("fit");
+  if (!btn) return;
+  btn.classList.toggle("on", fitOn);
+  btn.textContent = fitOn ? "⚔ Key fit on" : "⚔ Key fit off";
+  btn.title = fitOn
+    ? "Execution measures are computed for every applicant (a few Warcraft Logs points per run). Click to turn off."
+    : "Only the Key % table is shown. Click to compute the execution measures too.";
+}
+
+async function computeFits(entries, results, zone, level, ctx) {
+  if (!fitOn) return;
+  const generation = ++fitGeneration;
+  for (const e of entries) {
+    const has = results.get(e.key) && !e.player?.missing;
+    e.fit = has ? { state: "pending", note: "computing…" } : { state: "none", note: "—" };
+  }
+  renderResults();
+  const [lists, baselines] = await Promise.all([
+    loadLists({ url: listsUrl() }),
+    loadBaselines({ url: baselinesUrl() }),
+  ]);
+  const deps = { lists, baselines, store: storeFor(runStoreUrl()), storage: localStorage, log: (m) => console.warn("[fit]", m) };
+  const queue = entries.filter((e) => e.fit?.state === "pending");
+  const worker = async () => {
+    while (queue.length) {
+      const e = queue.shift();
+      if (generation !== fitGeneration) return; // a newer lookup took over
+      try {
+        e.fit = await assessEntry(e, results.get(e.key), zone.encounters, level, ctx, deps);
+      } catch (err) {
+        console.warn("[fit]", err);
+        e.fit = { state: "none", note: "execution data unavailable" };
+      }
+      if (generation === fitGeneration) renderResults();
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
 }
 
 // last successful lookup, kept so role-chip clicks can re-render without
@@ -387,7 +455,20 @@ function wireRoleChips() {
       entry.selected = btn.dataset.role;
       entry.player = player;
       chosenRole.set(btn.dataset.key, btn.dataset.role);
+      entry.fit = fitOn ? { state: "pending", note: "computing…" } : null;
       renderResults();
+      if (fitOn && lastRender) {
+        const { level, encounters } = lastRender;
+        const results = lastRender.results;
+        const ctx = lastRender.ctx;
+        if (results && ctx) {
+          const gen = fitGeneration;
+          Promise.all([loadLists({ url: listsUrl() }), loadBaselines({ url: baselinesUrl() })]).then(([lists, baselines]) =>
+            assessEntry(entry, results.get(entry.key), encounters, level, ctx, { lists, baselines, store: storeFor(runStoreUrl()), storage: localStorage })
+          ).then((fit) => { if (gen === fitGeneration) { entry.fit = fit; renderResults(); } })
+            .catch(() => { entry.fit = { state: "none", note: "execution data unavailable" }; renderResults(); });
+        }
+      }
     });
   }
 }
@@ -578,6 +659,17 @@ export function init() {
   for (const id of ["level", "dungeon", "region"]) {
     $(id).addEventListener("change", () => { lastSignature = null; scheduleLookup(PASTE_DELAY); });
   }
+
+  // key fit toggle (on by default)
+  fitOn = localStorage.getItem(LS.fit) !== "0";
+  setFitUI();
+  $("fit")?.addEventListener("click", () => {
+    fitOn = !fitOn;
+    localStorage.setItem(LS.fit, fitOn ? "1" : "0");
+    setFitUI();
+    if (fitOn && lastRender?.results) computeFits(lastRender.entries, lastRender.results, { encounters: lastRender.encounters }, lastRender.level, lastRender.ctx);
+    else if (!fitOn) { for (const e of lastRender?.entries ?? []) e.fit = null; renderResults(); }
+  });
 
   // auto-paste: hidden entirely where the permission model can't support it
   if (canAutoPaste()) {
