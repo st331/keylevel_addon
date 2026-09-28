@@ -17,13 +17,14 @@ const MIME = {
   ".svg": "image/svg+xml", ".json": "application/json",
 };
 
-// Real Warcraft Logs event/table data (Altar of Fangs +16, 8 deaths), served
-// for every report code the fake sees; the Arms warrior in it is renamed to
-// the fixture applicant "Fitguy" so the site can find him by name.
+// Real Warcraft Logs event/table data (Altar of Fangs +16), served for
+// every report code the fake sees; the Arms warrior in it is renamed to the
+// fixture applicant "Fitguy" and the Restoration shaman to "Healguy" so the
+// site can find them by name.
 const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures");
 const F8 = JSON.parse(fs.readFileSync(path.join(FIX, "fight8.json"), "utf8"));
 const T8 = JSON.parse(fs.readFileSync(path.join(FIX, "tables_fight8.json"), "utf8"));
-const renamed = (o) => JSON.parse(JSON.stringify(o).replaceAll("Genjibb", "Fitguy"));
+const renamed = (o) => JSON.parse(JSON.stringify(o).replaceAll("Genjibb", "Fitguy").replaceAll("桃君呐", "Healguy"));
 const F8R = renamed(F8), T8R = renamed(T8);
 const NOW = Date.now();
 const FIT_RUNS = [ // code, days ago (FITRUN6 is one hour old: too fresh for the store to know)
@@ -172,6 +173,18 @@ function characterResponse(query) {
         })) },
         [`e${PIT}`]: { ranks: [] },
       };
+    } else if (name === "Healguy" && slug === "area52") {
+      // the Key-fit healer: the same six runs, as the Restoration shaman of
+      // fight 8; hps and dps rankings both carry the run list
+      out[alias] = {
+        classID: 9,
+        [`e${AK}`]: { ranks: FIT_RUNS.map(([code, daysAgo], i) => ({
+          historicalPercent: isHps ? 70.0 : 30.0, rankPercent: isHps ? 70.0 : 30.0, bracketData: i % 2 ? 13 : 12,
+          amount: isHps ? 200_000 + i * 5_000 : 42_000 + i * 500, spec: "Restoration", score: 410,
+          medal: "bronze", duration: 1_715_504, startTime: NOW - daysAgo * day, report: { code, fightID: 8 },
+        })) },
+        [`e${PIT}`]: { ranks: [] },
+      };
     } else if (slug === "area52" && /^(Newguy|Racer\d|Retry\d|Offguy|Clipguy)$/.test(name) && !isHps) {
       // stand-ins for the applicants that stream in while you are vetting
       out[alias] = {
@@ -220,37 +233,18 @@ function startFakeRio() {
 }
 
 // Per-report aliases: r0: report(code: "X") { ... }. Bundle queries get the
-// fixture events (and the six tables only when asked, i.e. for runs the
-// wowlogs store does not hold); window queries get the ±10 s death
-// clusters; the healer stream is empty (no healer applicant in the roster).
+// fixture events (deaths, interrupts, the kick's casts, the dangerous
+// enemy casts) and the Summary, Interrupts and Dispels tables only when
+// asked, i.e. for runs the wowlogs store does not hold.
 function reportResponse(query) {
   const out = {};
   const blocks = query.split(/(?=r\d+: report\(code: ")/).filter((b) => /^r\d+: report/.test(b));
   for (const block of blocks) {
     const alias = /^(r\d+):/.exec(block)[1];
-    if (/dataType: Healing, sourceID:/.test(block)) { out.report = { heal: { data: [], nextPageTimestamp: null } }; continue; }
-    if (/fights\(fightIDs/.test(block)) {
-      const node = {
-        fights: [F8R.fight], masterData: { actors: F8R.actors.map((a) => ({ ...a, server: "Area 52" })) },
-        playerDetails: F8R.playerDetails,
-        deaths: { data: F8R.deaths }, low: { data: F8R.low35 }, ints: { data: F8R.interrupts },
-        kit: { data: F8R.kitCasts }, begin: { data: F8R.begincast },
-      };
-      if (/summary: table/.test(block)) Object.assign(node, { summary: T8R.summary, interrupts: T8R.interrupts, dispels: T8R.dispels, dmgTaken: T8R.dmgTaken, casts: T8R.casts, healing: T8R.healing });
-      out[alias] = node;
-      continue;
-    }
-    // death windows: d0/h0, d1/h1, ... each with its own startTime
-    const node = {};
-    for (const m of block.matchAll(/(d|h)(\d+): events\([^)]*startTime: (\d+)/g)) {
-      const [, kind, k, st] = m;
-      const t = Number(st) + 10_000;
-      const cluster = Object.keys(F8R.windows).filter((w) => w.startsWith("d")).find((w) => {
-        const ts = F8R.windows[w].map((e) => e.timestamp);
-        return t >= Math.min(...ts) - 1000 && t <= Math.max(...ts) + 2000;
-      });
-      node[`${kind}${k}`] = { data: cluster ? (kind === "d" ? F8R.windows[cluster] : F8R.windows["h" + cluster.slice(1)]) : [] };
-    }
+    const node = /fights\(fightIDs/.test(block) ? { fights: [F8R.fight] } : {};
+    if (/playerDetails/.test(block)) Object.assign(node, { masterData: { actors: F8R.actors.map((a) => ({ ...a, server: "Area 52" })) }, playerDetails: F8R.playerDetails });
+    if (/deaths: events/.test(block)) Object.assign(node, { deaths: { data: F8R.deaths }, ints: { data: F8R.interrupts }, kick: { data: F8R.kitCasts }, begin: { data: F8R.begincast } });
+    if (/summary: table/.test(block)) Object.assign(node, { summary: T8R.summary, interrupts: T8R.interrupts, dispels: T8R.dispels });
     out[alias] = node;
   }
   return { data: { reportData: out } };
@@ -264,23 +258,27 @@ function startFakeWowlogs() {
   const q = [5, 10, 25, 50, 75, 90, 95];
   const baselines = {
     built: new Date(NOW).toISOString(), season: "Mythic+ Season 1", quantiles: q,
-    measures: { dps: { unit: "per_s", better: "high" }, kick_prio: { unit: "per_min", better: "high" }, avoid_dmg_min: { unit: "per_min", better: "low" }, dispels_min: { unit: "per_min", better: "high" } },
+    measures: { dps: { unit: "per_s", better: "high" }, kick_prio: { unit: "per_min", better: "high" }, stops_min: { unit: "per_min", better: "high" }, dispels_min: { unit: "per_min", better: "high" } },
     cells: {
-      "Warrior-Arms|Windrunner Spire|12": { n: 500, n_exec: 200, dps: [250_000, 265_000, 285_000, 305_000, 330_000, 350_000, 365_000], kick_prio: [0.2, 0.3, 0.5, 0.8, 1.1, 1.5, 1.8], avoid_dmg_min: [1e4, 2e4, 4e4, 8e4, 1.5e5, 3e5, 4e5] },
-      "Warrior-Arms|Windrunner Spire|b12": { n: 900, n_exec: 400, dps: [250_000, 265_000, 285_000, 305_000, 330_000, 350_000, 365_000], kick_prio: [0.2, 0.3, 0.5, 0.8, 1.1, 1.5, 1.8], avoid_dmg_min: [1e4, 2e4, 4e4, 8e4, 1.5e5, 3e5, 4e5] },
+      "Warrior-Arms|Windrunner Spire|12": { n: 500, n_exec: 200, dps: [250_000, 265_000, 285_000, 305_000, 330_000, 350_000, 365_000], kick_prio: [0.2, 0.3, 0.5, 0.8, 1.1, 1.5, 1.8], stops_min: [0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7] },
+      "Warrior-Arms|Windrunner Spire|b12": { n: 900, n_exec: 400, dps: [250_000, 265_000, 285_000, 305_000, 330_000, 350_000, 365_000], kick_prio: [0.2, 0.3, 0.5, 0.8, 1.1, 1.5, 1.8], stops_min: [0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7] },
+      "Shaman-Restoration|Windrunner Spire|12": { n: 400, n_exec: 150, dps: [30_000, 34_000, 38_000, 43_000, 48_000, 55_000, 60_000], kick_prio: [0.05, 0.1, 0.15, 0.25, 0.4, 0.6, 0.8], stops_min: [0, 0, 0.02, 0.05, 0.1, 0.2, 0.3], dispels_min: [0, 0.1, 0.3, 0.6, 1, 1.5, 2] },
+      "Shaman-Restoration|Windrunner Spire|b12": { n: 800, n_exec: 300, dps: [30_000, 34_000, 38_000, 43_000, 48_000, 55_000, 60_000], kick_prio: [0.05, 0.1, 0.15, 0.25, 0.4, 0.6, 0.8], stops_min: [0, 0, 0.02, 0.05, 0.1, 0.2, 0.3], dispels_min: [0, 0.1, 0.3, 0.6, 1, 1.5, 2] },
     },
     priority: { "Windrunner Spire": { 1294557: { name: "Piercing Hiss", begun: 1000, completed: 100, interrupted: 900 }, 1289416: { name: "Envenom", begun: 500, completed: 200, interrupted: 300 }, 1306381: { name: "Fetid Spit", begun: 1200, completed: 1080, interrupted: 120 } } },
     dispellable: {},
   };
   const stored = {
     built: new Date(NOW).toISOString(),
+    // a lean-bundle row: Summary + Interrupts + Dispels, nothing else
     runs: { "FITRUN1:8": { dun: "Windrunner Spire", lvl: 12, start: NOW - 3 * 86_400_000, dur_s: 1604, timed: true, exec: true,
+      dispel_spells: { 1307571: { name: "Envenom", applied: 17, dispelled: 11, expired: 6 }, 1294569: { name: "Paralyzing Shots", applied: 15, dispelled: 13, expired: 2 } },
       players: [
-        { name: "Fitguy", server: "Area 52", class: "Warrior", spec: "Arms", role: "DPS", dps: 312_375, deaths: 2, deaths_chain: 1, pots: 6, hs: 0, kicks: 26, kicks_by: { 1294557: 20, 1306381: 6 }, dispels: 0, dispels_by: {}, avoid_dmg: 1_000_000, def_casts: 7, heal_total: 20_312_097, heal_over: 6_185_630 },
-        { name: "久仰", server: "Area 52", class: "Rogue", spec: "Assassination", role: "DPS", dps: 287_000, deaths: 3, deaths_chain: 1, pots: 5, hs: 1, kicks: 20, kicks_by: { 1294557: 10 }, dispels: 0, dispels_by: {}, avoid_dmg: 900_000, def_casts: 12, heal_total: 15_406_027, heal_over: 6_486_575 },
-        { name: "Anniecpt", server: "Area 52", class: "Hunter", spec: "Marksmanship", role: "DPS", dps: 300_000, deaths: 1, deaths_chain: 1, pots: 6, hs: 1, kicks: 13, kicks_by: { 1294557: 4 }, dispels: 3, dispels_by: {}, avoid_dmg: 700_000, def_casts: 9, heal_total: 10_333_555, heal_over: 9_469_345 },
-        { name: "桃君呐", server: "Area 52", class: "Shaman", spec: "Restoration", role: "Healer", dps: 42_000, deaths: 1, deaths_chain: 1, pots: 1, hs: 2, kicks: 7, kicks_by: { 1294557: 1 }, dispels: 18, dispels_by: { 1307571: 8 }, avoid_dmg: 800_000, def_casts: 14, heal_total: 200_808_703, heal_over: 89_909_577 },
-        { name: "男童", server: "Area 52", class: "DeathKnight", spec: "Blood", role: "Tank", dps: 164_000, deaths: 1, deaths_chain: 0, pots: 6, hs: 1, kicks: 27, kicks_by: { 1294557: 11 }, dispels: 0, dispels_by: {}, avoid_dmg: 2_000_000, def_casts: 40, heal_total: 263_559_961, heal_over: 128_256_588 },
+        { name: "Fitguy", server: "Area 52", class: "Warrior", spec: "Arms", role: "DPS", dps: 312_375, deaths: 2, deaths_chain: 1, pots: 6, hs: 0, kicks: 27, kicks_by: { 1294557: 8, 1306381: 3 }, stops: 4, dispels: 0, dispels_by: {} },
+        { name: "久仰", server: "Area 52", class: "Rogue", spec: "Assassination", role: "DPS", dps: 287_000, deaths: 3, deaths_chain: 1, pots: 5, hs: 1, kicks: 17, kicks_by: { 1294557: 10 }, stops: 0, dispels: 0, dispels_by: {} },
+        { name: "Anniecpt", server: "Area 52", class: "Hunter", spec: "Marksmanship", role: "DPS", dps: 300_000, deaths: 1, deaths_chain: 1, pots: 6, hs: 1, kicks: 8, kicks_by: { 1294557: 4 }, stops: 0, dispels: 3, dispels_by: {} },
+        { name: "Healguy", server: "Area 52", class: "Shaman", spec: "Restoration", role: "Healer", dps: 42_000, deaths: 1, deaths_chain: 1, pots: 1, hs: 2, kicks: 4, kicks_by: { 1294557: 1 }, stops: 1, dispels: 18, dispels_by: { 1307571: 8 } },
+        { name: "男童", server: "Area 52", class: "DeathKnight", spec: "Blood", role: "Tank", dps: 164_000, deaths: 1, deaths_chain: 0, pots: 6, hs: 1, kicks: 29, kicks_by: { 1294557: 11 }, stops: 5, dispels: 0, dispels_by: {} },
       ] } },
   };
   const server = http.createServer((req, res) => {
@@ -855,20 +853,23 @@ try {
   // ============ scenario 1d: Key fit (Set B) ================================
   {
     const page = await newPage();
-    await page.goto(`http://127.0.0.1:${deployedSrv.port}/index.html?region=us&level=12&dungeon=Windrunner%20Spire&chars=Fitguy-Area52,Foo-Area52`);
+    await page.goto(`http://127.0.0.1:${deployedSrv.port}/index.html?region=us&level=12&dungeon=Windrunner%20Spire&chars=Fitguy-Area52,Foo-Area52,Healguy-Area52`);
     await page.waitForSelector("table.summary", { timeout: 10_000 });
     const row = () => page.locator('tr.row[data-key="Fitguy-Area52@us"]');
+    const healerRow = () => page.locator('tr.row[data-key="Healguy-Area52@us"]');
     const blocksFor = (code) => (wcl.state.reportQueries ?? []).flatMap((q) => q.split(/(?=r\d+: report\(code: ")/).filter((b) => b.includes(`report(code: "${code}")`)));
 
-    await check("key fit: the composite and its chips appear after the Key % table", async () => {
+    await check("key fit: the composite and its three chips appear after the Key % table", async () => {
       await page.waitForSelector('tr.row[data-key="Fitguy-Area52@us"] .fit-score', { timeout: 20_000 });
+      await page.waitForFunction(() => !/…/.test(document.querySelector('tr.row[data-key="Fitguy-Area52@us"] .fit-cell')?.textContent ?? "…"), null, { timeout: 20_000 });
       const text = await row().innerText();
       assert.match(text, /\d+fit/, "a composite percentile");
       assert.match(text, /n 6/, "six runs in the window");
       assert.match(text, /DMG \d+/);
       assert.match(text, /KICK \d+/);
-      assert.match(text, /DEATHS −\d+%/, "a solo death every run costs the deaths weight");
-      assert.match(text, /⚑ deaths/, "repeated own-fault deaths flagged");
+      assert.match(text, /STOP \d+/, "four stops a run, judged against the fake baselines' stops_min");
+      assert.doesNotMatch(text, /DEATHS|SAVE|AVOID|TRIAGE|DISPEL|⚑/, "nothing of the dropped measures, no flags, no healer measure on a dps");
+      assert.doesNotMatch(text, /HPS/, "no throughput line for a dps");
     });
 
     await check("key fit: the run already in the wowlogs store was not pulled again; absent runs were; the fresh run got events only", async () => {
@@ -878,11 +879,14 @@ try {
       assert.ok(stored.length >= 1, "events were pulled for the stored run (only this site needs them)");
       assert.ok(stored.every((b) => !/summary: table/.test(b)), "…but never its tables");
       const absent = blocksFor("FITRUN2");
-      assert.ok(absent.some((b) => /summary: table/.test(b) && /interrupts: table/.test(b) && /healing: table/.test(b)), "a run the collector will never sweep gets its tables live, once");
+      assert.ok(absent.some((b) => /summary: table/.test(b) && /interrupts: table/.test(b) && /dispels: table/.test(b)), "a run the collector will never sweep gets its tables live, once");
+      assert.ok(absent.every((b) => !/healing: table|dmgTaken: table|casts: table/.test(b)), "Summary + Interrupts + Dispels only");
       const fresh = blocksFor("FITRUN6");
       assert.ok(fresh.length >= 1 && fresh.every((b) => !/summary: table/.test(b)), "an hour-old run is too fresh to know: events only");
       assert.ok(absent.some((b) => /begin: events/.test(b) && /1294557/.test(b)), "dangerous casts from the baselines' priority table");
-      assert.ok((wcl.state.reportQueries ?? []).some((q) => /d0: events\(fightIDs: \[8\], dataType: DamageTaken[^)]*startTime: \d+, endTime: \d+/.test(q)), "death windows requested");
+      assert.ok(absent.some((b) => /kick: events\([^)]*ability\.id in \(6552\)/.test(b)), "the warrior's Pummel casts, nothing else of the kit");
+      const all = wcl.state.reportQueries ?? [];
+      assert.ok(all.every((q) => !/low: events|d0: events|dataType: Healing/.test(q)), "no low-HP stream, no death windows, no healer stream");
     });
 
     await check("key fit: damage is judged against the cell, not the Key %", async () => {
@@ -892,13 +896,25 @@ try {
       const panel = page.locator('tr.detail-row[data-key="Fitguy-Area52@us"]');
       const text = await panel.innerText();
       assert.match(text, /Execution \(Set B\) · 6 run\(s\)/i);
-      assert.match(text, /Deaths, classified/i);
-      assert.match(text, /solo/i);
-      assert.match(text, /chain/i);
-      assert.match(text, /Spell Reflection/, "the available-and-unused defensive is named");
+      assert.match(text, /STOP w15 — percentile \d+ over \d+ run\(s\)/);
+      assert.match(text, /KICK w25/);
+      assert.doesNotMatch(text, /Deaths, classified|Flags|Spell Reflection/, "no death list, no flags");
       assert.match(text, /Run data:/i, "provenance line");
       assert.match(text, /1 store/i);
       assert.match(text, /1 pending/i);
+    });
+
+    await check("key fit: a healer keeps DISPEL and sees their HPS and DPS as plain numbers", async () => {
+      await page.waitForFunction(() => /DISPEL \d+/.test(document.querySelector('tr.row[data-key="Healguy-Area52@us"] .fit-cell')?.textContent ?? ""), null, { timeout: 20_000 });
+      const text = await healerRow().innerText();
+      assert.match(text, /213k HPS · 43\.3k DPS/, "median amounts over the window runs of the hps and the dps rankings");
+      assert.match(text, /DMG \d+/);
+      assert.match(text, /KICK \d+/);
+      assert.match(text, /STOP \d+/);
+      assert.match(text, /DISPEL \d+/, "18 dispels a run against the fake baselines' dispels_min");
+      const dispel = await healerRow().locator(".fit-chip", { hasText: "DISPEL" }).getAttribute("title");
+      assert.match(dispel, /over 5 run\(s\)/, "the stored run and the four live ones carry dispels; the fresh one does not");
+      assert.doesNotMatch(text, /DEATHS|TRIAGE|⚑/);
     });
 
     await check("key fit: an applicant with one run gets no composite, and says so", async () => {
@@ -913,11 +929,12 @@ try {
       await page.click("#lookup");
       await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("done"));
       await page.waitForSelector('tr.row[data-key="Fitguy-Area52@us"] .fit-score', { timeout: 20_000 });
-      const codes = (q) => [...q.matchAll(/report\(code: "([^"]+)"\)/g)].map((m) => m[1]).join(",") + (/summary: table/.test(q) ? " +tables" : "") + (/d0: events/.test(q) ? " windows" : "");
+      const codes = (q) => [...q.matchAll(/report\(code: "([^"]+)"\)/g)].map((m) => m[1]).join(",") + (/summary: table/.test(q) ? " +tables" : "");
       assert.equal((wcl.state.reportQueries ?? []).length, before,
         `no report query: every run's facts were remembered — queries: ${(wcl.state.reportQueries ?? []).map(codes).join(" | ")}`);
       const box = await page.evaluate(() => JSON.parse(localStorage.getItem("kllRunFacts")));
-      assert.ok(box && Object.keys(box.entries).length >= 6, "facts persisted per run");
+      assert.ok(box && Object.keys(box.entries).length >= 12, "facts persisted per run and applicant");
+      assert.equal(box.v, 2);
     });
 
     await check("key fit: the toggle turns the column off and remembers it", async () => {

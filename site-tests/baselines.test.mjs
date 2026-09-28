@@ -7,9 +7,9 @@ import { RunStore, shardOf, execFromStoredRun, SWEEP_LAG_MS } from "../docs/js/r
 const DOC = {
   built: "2026-09-27T05:02:00Z",
   quantiles: [5, 10, 25, 50, 75, 90, 95],
-  measures: { dps: { unit: "per_s", better: "high" }, avoid_dmg_min: { unit: "per_min", better: "low" }, kick_prio: { better: "high" } },
+  measures: { dps: { unit: "per_s", better: "high" }, avoid_dmg_min: { unit: "per_min", better: "low" }, kick_prio: { better: "high" }, stops_min: { unit: "per_min", better: "high" } },
   cells: {
-    "Warrior-Arms|Altar of Fangs|18": { n: 1042, n_exec: 300, dps: [310431, 317320, 330292, 346080, 362986, 377029, 385884], avoid_dmg_min: [1e4, 2e4, 4e4, 8e4, 1.5e5, 3e5, 4e5] },
+    "Warrior-Arms|Altar of Fangs|18": { n: 1042, n_exec: 300, dps: [310431, 317320, 330292, 346080, 362986, 377029, 385884], avoid_dmg_min: [1e4, 2e4, 4e4, 8e4, 1.5e5, 3e5, 4e5], stops_min: [0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7] },
     "Warrior-Arms|Altar of Fangs|b18": { n: 2469, dps: [300000, 310000, 325000, 345000, 365000, 380000, 390000] },
     "Warrior-Arms|*|b18": { n: 9800, dps: [280000, 300000, 320000, 340000, 360000, 380000, 395000] },
     "Warrior-Fury|Altar of Fangs|b18": { n: 46, dps: [333456, 341546, 352315, 376071, 399922, 413302, 417087] },
@@ -18,7 +18,7 @@ const DOC = {
     // 900 timed rows but 4 bundled ones, the pooled band cell 61 bundled rows
     "Mage-Arcane|Altar of Fangs|12": { n: 900, n_exec: 4, dps: [1, 2, 3, 4, 5, 6, 7] },
     "Mage-Arcane|Altar of Fangs|b12": { n: 1800, n_exec: 9, dps: [1, 2, 3, 4, 5, 6, 7] },
-    "Mage-Arcane|*|b12": { n: 5000, n_exec: 61, dps: [1, 2, 3, 4, 5, 6, 7], avoid_dmg_min: [100, 200, 400, 800, 1600, 3200, 6400], kick_prio: [0, 0.1, 0.2, 0.4, 0.6, 0.8, 1] },
+    "Mage-Arcane|*|b12": { n: 5000, n_exec: 61, dps: [1, 2, 3, 4, 5, 6, 7], stops_min: [0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7], kick_prio: [0, 0.1, 0.2, 0.4, 0.6, 0.8, 1] },
   },
   priority: { "Altar of Fangs": { 1294557: { name: "Piercing Hiss", begun: 15320, completed: 812, interrupted: 13990 }, 1306381: { name: "Fetid Spit", begun: 12000, completed: 10800, interrupted: 1200 }, 999: { begun: 3, completed: 0, interrupted: 3 } } },
 };
@@ -47,11 +47,14 @@ test("percentiles respect the measure's direction and the cell's coverage", () =
   const c = b.cellFor("Warrior-Arms", "Altar of Fangs", 18);
   assert.equal(b.percentile(c, "dps", 346080), 50);
   assert.ok(b.percentile(c, "dps", 380000) > 90);
+  assert.equal(b.percentile(c, "stops_min", 0.2), 50);
+  assert.equal(b.percentile(c, "stops_min", 0.3), 75, "more stops per minute = better");
   assert.equal(b.percentile(c, "avoid_dmg_min", 8e4), 50);
-  assert.ok(b.percentile(c, "avoid_dmg_min", 3e5) < 15, "more avoidable damage = worse percentile");
+  assert.ok(b.percentile(c, "avoid_dmg_min", 3e5) < 15, "a lower-is-better measure in the document flips the scale");
   assert.equal(b.percentile(c, "kick_prio", 1), null, "no quantiles for that measure in this cell");
   assert.equal(b.nFor(c, "dps"), 1042);
   assert.equal(b.nFor(c, "kick_prio"), 300, "bundle measures count the bundled rows");
+  assert.equal(b.nFor(c, "stops_min"), 300, "stops are a bundle measure too");
 });
 
 test("dangerous casts come from the population's own kick rate", () => {
@@ -122,7 +125,15 @@ test("execFromStoredRun maps names to actor ids and keeps nulls", () => {
   assert.equal(exec.exec, false);
   assert.equal(exec.rows[1].dps, 300000);
   assert.equal(exec.rows[1].kicks, null, "bundle not fetched: null, never 0");
+  assert.equal(exec.rows[1].stops, null, "a row from before the lean bundle: null, never 0");
+  assert.equal(exec.rows[1].dispels, null);
+  assert.equal(exec.dispel_spells, null);
   assert.equal(exec.rows[1].role, "dps");
+  assert.ok(!("deaths" in exec.rows[1]), "deaths are not read");
+  const lean = execFromStoredRun({ exec: true, dur_s: 1600, dispel_spells: { 1307571: { applied: 17, dispelled: 11, expired: 6 } }, players: [{ name: "Genjibb", class: "Warrior", spec: "Arms", role: "DPS", dps: 300000, kicks: 27, kicks_by: { 1294557: 8 }, stops: 4, dispels: 0, dispels_by: {} }] }, (name) => ({ Genjibb: 1 })[name]);
+  assert.equal(lean.rows[1].stops, 4, "stops pass through");
+  assert.equal(lean.rows[1].dispels, 0);
+  assert.equal(lean.dispel_spells[1307571].expired, 6);
 });
 
 test("run store: parallel lookups on one shard share a single fetch", async () => {
@@ -141,14 +152,14 @@ test("an execution measure is judged in the finest cell that has it, damage stay
   const b = makeBaselines(DOC);
   assert.equal(b.cellFor("Mage-Arcane", "Altar of Fangs", 12).tier, "exact", "damage: 900 timed rows at the exact level");
   assert.equal(b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "dps").tier, "exact");
-  const c = b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "avoid_dmg_min");
-  assert.equal(c.tier, "pooled", "the exact and band cells have no avoidable-damage quantiles yet");
-  assert.equal(b.nFor(c, "avoid_dmg_min"), 61);
-  assert.equal(b.percentile(c, "avoid_dmg_min", 800), 50);
+  const c = b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "stops_min");
+  assert.equal(c.tier, "pooled", "the exact and band cells have no stops quantiles yet");
+  assert.equal(b.nFor(c, "stops_min"), 61);
+  assert.equal(b.percentile(c, "stops_min", 0.2), 50);
   assert.equal(b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "kick_prio").tier, "pooled");
   assert.equal(b.cellFor("Mage-Arcane", "Altar of Fangs", 12, "dispels_min"), null, "no cell can judge dispels yet");
   // once the exact cell has the measure with enough bundled rows, it wins again
-  const c2 = b.cellFor("Warrior-Arms", "Altar of Fangs", 18, "avoid_dmg_min");
+  const c2 = b.cellFor("Warrior-Arms", "Altar of Fangs", 18, "stops_min");
   assert.equal(c2.tier, "exact");
-  assert.equal(b.nFor(c2, "avoid_dmg_min"), 300);
+  assert.equal(b.nFor(c2, "stops_min"), 300);
 });

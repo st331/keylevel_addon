@@ -311,6 +311,8 @@ async function lookup(ev) {
         key: k,
         detected, selected, sortRole: selected, order, topKeys, byRole: windowed,
         scores: rioScores.get(k) ?? null,
+        // the hps rankings (healers only): Key fit shows a healer's HPS/DPS
+        hps: hpsResults.get(k) ?? null,
         // no per-role runs at all: unfiltered fallback keeps the old
         // "no M+ logs" / "no WCL character" rows working
         player: selected

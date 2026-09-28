@@ -31,7 +31,7 @@ export function makeBaselines(doc) {
   if (!doc || typeof doc !== "object" || !doc.cells || !Array.isArray(doc.quantiles)) return null;
   const q = doc.quantiles;
   const band = (level) => `b${Math.floor(level / 2) * 2}`;
-  const EXEC_MEASURES = ["kicks_min", "kick_prio", "dispels_min", "avoid_dmg_min", "def_casts_min", "heal_eff_s"];
+  const EXEC_MEASURES = ["kicks_min", "kick_prio", "stops_min", "dispels_min", "avoid_dmg_min", "def_casts_min", "heal_eff_s"];
   const nRows = (c, measure) => (EXEC_MEASURES.includes(measure) ? (c.n_exec ?? 0) : (c.n ?? 0));
   const get = (key, minN) => {
     const c = doc.cells[key];

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { getToken, gql, buildCharacterQuery, fetchCharacters, fetchCharactersParallel, guessMythicPlusZone, WclError, fetchRunBundles, fetchHealerStream, MAX_IN_FLIGHT, inFlightCount } from "../docs/js/wcl.js";
+import { getToken, gql, buildCharacterQuery, fetchCharacters, fetchCharactersParallel, guessMythicPlusZone, WclError, fetchRunBundles, buildRunBundleQuery, MAX_IN_FLIGHT, inFlightCount } from "../docs/js/wcl.js";
 
 function fakeFetch(handler) {
   const calls = [];
@@ -116,17 +116,40 @@ test("a season rollover picks the NEW season while the old one is still unfrozen
   assert.equal(guessMythicPlusZone([...zones].reverse()).id, 55, "and not by list order");
 });
 
+test("buildRunBundleQuery asks for exactly what damage, kicks, stops and dispels need", () => {
+  const item = { code: "ABC", fightID: 8, kickIds: new Set([6552]), dangerousIds: new Set([1294557, 1289416]), tables: true };
+  const events = buildRunBundleQuery([item], "events");
+  assert.match(events, /fights\(fightIDs: \[8\]\)/);
+  assert.match(events, /deaths: events\(fightIDs: \[8\], dataType: Deaths, hostilityType: Friendlies/, "deaths: only for the alive check in kick utilisation");
+  assert.match(events, /ints: events\(fightIDs: \[8\], dataType: Interrupts, hostilityType: Friendlies/);
+  assert.match(events, /kick: events\(fightIDs: \[8\], dataType: Casts, hostilityType: Friendlies, filterExpression: "ability\.id in \(6552\)"/, "the kick's casts only");
+  assert.match(events, /begin: events\(fightIDs: \[8\], dataType: Casts, hostilityType: Enemies, filterExpression: "ability\.id in \(1294557,1289416\) and \(type = \\"begincast\\" or type = \\"cast\\"\)"/);
+  assert.ok(!/low: events|DamageTaken|Healing|playerDetails|table\(/.test(events), "no low-HP stream, no healing, no tables in the events half");
+  const tables = buildRunBundleQuery([item], "tables");
+  assert.match(tables, /masterData \{ actors\(type: "Player"\)/);
+  assert.match(tables, /playerDetails\(fightIDs: \[8\]\)/);
+  assert.match(tables, /summary: table\(fightIDs: \[8\], dataType: Summary\)/);
+  assert.match(tables, /interrupts: table\(fightIDs: \[8\], dataType: Interrupts\)/);
+  assert.match(tables, /dispels: table\(fightIDs: \[8\], dataType: Dispels\)/);
+  assert.ok(!/dmgTaken|casts: table|healing: table|events\(/.test(tables), "no damage-taken, casts or healing tables, no events in the tables half");
+  const stored = buildRunBundleQuery([{ ...item, tables: false, kickIds: new Set(), dangerousIds: new Set() }], "all");
+  assert.ok(!/table\(/.test(stored), "a stored run never asks for tables");
+  assert.ok(!/kick: events|begin: events/.test(stored), "no kick, no dangerous list: those streams are not asked for");
+  assert.match(stored, /deaths: events/);
+  assert.match(stored, /ints: events/);
+});
+
 test("fetchRunBundles: one request per run, two for a run that needs tables, merged into one bundle", async () => {
   const f = fakeFetch((url, opts) => {
     const q = JSON.parse(opts.body).query;
     const node = { fights: [{ id: 8, startTime: 0, endTime: 1000 }] };
-    if (/deaths: events/.test(q)) Object.assign(node, { deaths: { data: [{ timestamp: 5, targetID: 1 }] }, low: { data: [] }, ints: { data: [] } });
-    if (/summary: table/.test(q)) Object.assign(node, { masterData: { actors: [{ id: 1, name: "A" }] }, playerDetails: { data: { playerDetails: { dps: [] } } }, summary: { s: 1 }, interrupts: {}, dispels: {}, healing: {} });
+    if (/deaths: events/.test(q)) Object.assign(node, { deaths: { data: [{ timestamp: 5, targetID: 1 }] }, ints: { data: [{ timestamp: 7, sourceID: 1, abilityGameID: 6552 }] }, kick: { data: [{ timestamp: 6, sourceID: 1, type: "cast", abilityGameID: 6552 }] }, begin: { data: [] } });
+    if (/summary: table/.test(q)) Object.assign(node, { masterData: { actors: [{ id: 1, name: "A" }] }, playerDetails: { data: { playerDetails: { dps: [] } } }, summary: { s: 1 }, interrupts: {}, dispels: {} });
     return { json: { data: { reportData: { r0: node } } } };
   });
   const out = await fetchRunBundles({ token: "t", fetchImpl: f }, [
-    { code: "STORED", fightID: 8, tables: false },
-    { code: "ABSENT", fightID: 8, tables: true },
+    { code: "STORED", fightID: 8, tables: false, kickIds: new Set([6552]), dangerousIds: new Set([1]) },
+    { code: "ABSENT", fightID: 8, tables: true, kickIds: new Set([6552]), dangerousIds: new Set([1]) },
   ]);
   assert.equal(f.calls.length, 3, "one request for the stored run, two for the absent one");
   const queries = f.calls.map((c) => JSON.parse(c.opts.body).query);
@@ -136,24 +159,15 @@ test("fetchRunBundles: one request per run, two for a run that needs tables, mer
   assert.ok(absent.some((q) => /summary: table/.test(q) && /playerDetails/.test(q) && !/deaths: events/.test(q)), "a tables half, with the actors");
   assert.equal(out[0].bundle.tables, null, "a stored run never asks for tables");
   assert.equal(out[0].bundle.events.deaths.length, 1);
+  assert.equal(out[0].bundle.events.kickCasts.length, 1);
+  assert.equal(out[0].bundle.events.interrupts.length, 1);
+  assert.deepEqual(out[0].bundle.events.begin, []);
+  assert.ok(!("low35" in out[0].bundle.events), "no low-HP stream in the bundle");
   assert.equal(out[1].bundle.events.deaths.length, 1, "events from one half…");
   assert.ok(out[1].bundle.tables?.summary, "…tables from the other");
+  assert.deepEqual(Object.keys(out[1].bundle.tables).sort(), ["dispels", "interrupts", "summary"]);
   assert.equal(out[1].bundle.actors.length, 1);
   assert.equal(out[1].bundle.fight.endTime, 1000);
-});
-
-test("fetchHealerStream asks for heals only, without resources, and follows pages", async () => {
-  let n = 0;
-  const f = fakeFetch((url, opts) => {
-    const q = JSON.parse(opts.body).query;
-    assert.match(q, /dataType: Healing, sourceID: 42, filterExpression: "type = \\"heal\\""/);
-    assert.ok(!/includeResources/.test(q), "no resources: they double the bytes and the server time");
-    n++;
-    return { json: { data: { reportData: { report: { heal: { data: [{ timestamp: n }], nextPageTimestamp: n === 1 ? 500 : null } } } } } };
-  });
-  const ev = await fetchHealerStream({ token: "t", fetchImpl: f }, { code: "X", fightID: 1, healerId: 42 });
-  assert.equal(ev.length, 2);
-  assert.match(JSON.parse(f.calls[1].opts.body).query, /startTime: 500/);
 });
 
 test("gql keeps at most MAX_IN_FLIGHT requests in flight and drains the queue", async () => {

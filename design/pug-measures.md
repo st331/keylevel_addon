@@ -158,10 +158,11 @@ Build Set A first: it works the day the sidecar exists because its damage and de
 
 ## Revisions after use
 
-- **Flags.** Only "repeated own-fault deaths" is shown. Dying to the same
+- **Flags.** Only "repeated own-fault deaths" was shown. Dying to the same
   ability twice is recorded but not flagged (circumstance as often as habit).
   A recurring core is detected only to switch the share measures off; it says
-  nothing about the player, so it is not a flag.
+  nothing about the player, so it is not a flag. (Superseded below: with
+  deaths gone, no flag remains.)
 - **Potion gate dropped.** Potion use is preparation, not ability, and the −3
   was a weak signal in +10 pugs. Potions still count as a self-save when one
   answers a low-HP episode.
@@ -169,3 +170,36 @@ Build Set A first: it works the day the sidecar exists because its damage and de
   finest cell that has quantiles for it and enough bundled rows (`n_exec`),
   so the pooled spec × band cell serves it weeks before the exact cell does;
   damage keeps its own ladder on `n`.
+- **Damage, kicks and stops only (owner's decision, 2026-09-28).** The Key
+  fit keeps DAMAGE, KICKS and STOPS; healers also keep DISPELS. Self-save,
+  deaths (the classification, the allowance, the flags), avoidable damage and
+  triage are dropped from the measures, the fetches, the UI and the tests:
+  they are already reflected in the damage number. A **stop** is an enemy
+  cast interrupted with anything that is not the spec's kick (a stun, a
+  knock, an incapacitate, a silence); per run it is the applicant's non-kick
+  interrupts per minute against the cell's `stops_min` quantiles (percentile
+  → z, k = 3, shown from 4 runs, recency-weighted, the finest cell that has
+  the measure). Events path: interrupt events by the applicant whose ability
+  is not the kick id; store path: the row's `stops` (null when the collector
+  did not fetch the Interrupts table for the run). KICK is unchanged
+  (utilisation on dangerous casts when the kick was up, else the
+  priority-weighted rate against the cell); DISPEL is unchanged (own dispels
+  per minute vs `dispels_min`, blended with the share of dispellable debuffs
+  that did not expire).
+
+  | Measure | DPS | Tank | Healer |
+  |---|---|---|---|
+  | Damage | 60 | 40 | 15 |
+  | Kicks | 25 | 35 | 30 |
+  | Stops | 15 | 25 | 25 |
+  | Dispels | – | – | 30 |
+
+  The composite still needs damage present and ≥ 60 of the weight. Healers'
+  fit cell also shows their HPS and DPS as plain numbers (the median amount
+  over the window runs of the hps and the dps rankings) — context, never a
+  measure. Per run the site now pulls fights, actors, player details, deaths
+  (only for the alive check in kick utilisation), interrupts, the kick's
+  casts (for the cooldown calibration) and the dangerous enemy begincasts;
+  tables for runs the collector will never hold are Summary + Interrupts +
+  Dispels. Death windows, the sub-35 % stream, the defensive casts and the
+  healer streams are no longer requested.

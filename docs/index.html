@@ -85,12 +85,12 @@
     <p class="muted"><b>Key fit</b> is the execution score for a PUG: a weighted composite,
       shown as a percentile among players of the role, of <em>DMG</em> (damage vs players of the
       same spec in timed runs of that dungeon and level, recency-weighted median), <em>KICK</em>
-      (dangerous casts interrupted when the kick was up and nobody else could), <em>SAVE</em>
-      (pressed a defensive, self-heal, healthstone or potion when under 35 %), <em>DEATHS</em>
-      (own-fault deaths beyond an allowance of one plus a quarter per run — chain deaths, one-shots
-      and deaths while the healer was down or two others were already low never count, and the first
-      solo death is free), <em>AVOID</em> (avoidable damage per minute vs the cell) and, for healers,
-      <em>TRIAGE</em> (seconds from an ally dropping under 35 % to a direct heal) and <em>DISPEL</em>.
+      (dangerous casts interrupted when the kick was up and nobody else could) and <em>STOP</em>
+      (casts interrupted with stuns, knocks, silences or anything else that is not the spec's kick,
+      per minute vs the cell); healers add <em>DISPEL</em> (own dispels per minute vs the cell, and
+      the share of dispellable debuffs that expired) and see their HPS and DPS as plain numbers
+      beside the score. Deaths, defensives and avoidable damage are not scored on their own: the
+      damage number already carries them.
       Weights and rules: <a href="https://github.com/st331/keylevel_addon/blob/main/design/pug-measures.md" target="_blank" rel="noopener">design/pug-measures.md</a>.
       Baselines are the newest two weeks of timed leaderboard runs from the companion collector, so
       percentiles are conservative. Runs already held by that collector are never pulled from

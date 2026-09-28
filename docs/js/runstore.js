@@ -77,8 +77,10 @@ export class RunStore {
 }
 
 // Turn a stored run into the `exec` shape measures.js reads: rows by actor
-// name (the store has no report-local actor ids), plus the run-level spell
-// tables. The caller maps names to ids once it knows the fight's actors.
+// name (the store has no report-local actor ids), plus the run's dispel
+// table. The caller maps names to ids once it knows the fight's actors.
+// Only what the measures read is carried over; a field the collector did
+// not fetch for the run (`stops` before the lean bundle) stays null, never 0.
 export function execFromStoredRun(run, nameToId) {
   if (!run) return null;
   const rows = {};
@@ -86,21 +88,17 @@ export function execFromStoredRun(run, nameToId) {
     const id = nameToId?.(p.name, p.server) ?? p.name;
     rows[id] = {
       name: p.name, server: p.server, cls: p.class, spec: p.spec, role: (p.role ?? "").toLowerCase(),
-      dps: p.dps ?? null, deaths: p.deaths ?? null, deaths_chain: p.deaths_chain ?? null,
-      pots: p.pots ?? null, hs: p.hs ?? null,
+      dps: p.dps ?? null,
       kicks: p.kicks ?? null, kicks_by: p.kicks_by ?? null,
+      stops: typeof p.stops === "number" ? p.stops : null,
       dispels: p.dispels ?? null, dispels_by: p.dispels_by ?? null,
-      avoid_dmg: p.avoid_dmg ?? null, def_casts: p.def_casts ?? null,
-      heal_total: p.heal_total ?? null, heal_over: p.heal_over ?? null,
     };
   }
   return {
     source: "store",
     exec: run.exec !== false,
     rows,
-    int_spells: run.int_spells ?? null,
     dispel_spells: run.dispel_spells ?? null,
-    death_events: run.death_events ?? null,
     dur_s: run.dur_s ?? null,
     timed: run.timed ?? null,
   };
