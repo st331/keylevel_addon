@@ -4,20 +4,20 @@
 // this site may pull, turns runs into cacheable facts and hands them to the
 // measures engine. Pure of DOM; app.js drives it.
 
-import { fetchRunBundles, fetchWindows, fetchHealerStream } from "./wcl.js";
+import { fetchRunBundles } from "./wcl.js";
 import { RunStore, execFromStoredRun } from "./runstore.js";
 import { loadBaselines } from "./baselines.js";
 import { execFromTables } from "./execparse.js";
 import { kitFor, castStats, mergeCastStats, runFacts, assess } from "./measures.js";
-import { roleOfSpec, pickPercent, classToken } from "./transform.js";
+import { roleOfSpec, pickPercent, classToken, median } from "./transform.js";
 
 export const WINDOW_SPREAD = 2;      // listing level ± 2
 export const DAMAGE_RUNS = 15;       // newest runs that feed the damage measure
 export const EXEC_RUNS = 8;          // newest runs that get tables/events
-export const HEALER_STREAM_RUNS = 4; // the healer's healing stream is 3–5 MB a run (brotli on the wire)
 export const FACTS_TTL = 14 * 86_400_000;
 export const FACTS_MAX = 400;
-export const FACTS_VERSION = 1;
+// bumped whenever the facts' shape changes: an older box is discarded whole
+export const FACTS_VERSION = 2;
 
 // WCL classID -> the class name lists.json and the store use
 const CLASS_NAMES = { WARRIOR: "Warrior", PALADIN: "Paladin", HUNTER: "Hunter", ROGUE: "Rogue", PRIEST: "Priest", DEATHKNIGHT: "DeathKnight", SHAMAN: "Shaman", MAGE: "Mage", WARLOCK: "Warlock", MONK: "Monk", DRUID: "Druid", DEMONHUNTER: "DemonHunter", EVOKER: "Evoker" };
@@ -64,7 +64,7 @@ export const factsKey = (code, fightID, name) => `${code}:${fightID}:${String(na
 
 // The applicant's runs in the role, at the listing level ± 2 (widened to
 // −4…+3 when fewer than 3), applied spec only, newest first, deduplicated.
-// result = the dps encounterRankings blob set; encounters = zone encounters.
+// result = an encounterRankings blob set (dps or hps); encounters = zone encounters.
 export function windowRuns(result, encounters, role, level) {
   if (!result) return { runs: [], spec: null };
   const byId = new Map((encounters ?? []).map((e) => [e.id, e.name]));
@@ -100,6 +100,15 @@ export function windowRuns(result, encounters, role, level) {
   return { runs: spec ? runs.filter((r) => r.spec === spec) : runs, spec };
 }
 
+// A healer's HPS and DPS as plain numbers: the median amount over the
+// window runs of the hps and the dps rankings. Shown beside the fit, never
+// a measure. Null for every other role.
+export function throughputFor(role, dpsWindow, hpsResult, encounters, level) {
+  if (role !== "healer") return null;
+  const med = (runs) => median(runs.map((r) => r.amount).filter((a) => typeof a === "number" && a > 0));
+  return { hps: med(windowRuns(hpsResult, encounters, role, level).runs), dps: med(dpsWindow) };
+}
+
 // ------------------------------------------------------- normalize
 
 function findSelf(actors, name) {
@@ -127,18 +136,17 @@ function playersFrom(bundle) {
 }
 
 // Assemble the run object measures.js reads.
-export function normalizeRun(w, { bundle, exec, windows, healerHeal, selfId, cls, role }) {
+export function normalizeRun(w, { bundle, exec, selfId, cls, role }) {
   const fight = bundle?.fight ?? null;
   const players = playersFrom(bundle);
   const durationS = fight ? (fight.endTime - fight.startTime) / 1000 : (exec?.dur_s ?? (w.duration ? w.duration / 1000 : null));
   return {
     code: w.code, fightID: w.fightID, dungeon: w.dungeon, encounterID: w.encounterID, level: w.level, start: w.start,
     durationS, timed: w.timed, selfId, cls, spec: w.spec, role, players,
-    healerId: players.find((p) => p.role === "healer")?.id ?? null,
     fight: fight ? { startTime: fight.startTime, endTime: fight.endTime } : { startTime: 0, endTime: 0 },
     amount: w.amount, keyPct: w.keyPct,
     exec,
-    events: bundle ? { ...bundle.events, windows: windows ?? {}, healerHeal: healerHeal ?? null } : null,
+    events: bundle ? { ...bundle.events } : null,
   };
 }
 
@@ -151,12 +159,13 @@ export function runStore(opts) {
 }
 
 // Compute the fit for one applicant.
-//   entry: { fullName, selected (role), player.class (token), region }
+//   entry: { fullName, selected (role), player.class (token), region, hps (the hps rankings, healers) }
 //   ctx: WCL ctx (token + endpoints); deps: { lists, baselines, store, storage, now, log, onPartial }
-// Returns { state, assess, provenance, note }. When runs still have to be
-// fetched, deps.onPartial first receives what the rankings alone say
-// ({ state: "partial", ... }: the damage measure and every run already
-// remembered), so a number is on screen before Warcraft Logs answers.
+// Returns { state, assess, throughput, provenance, note }. When runs still
+// have to be fetched, deps.onPartial first receives what the rankings
+// alone say ({ state: "partial", ... }: the damage measure, a healer's
+// HPS/DPS and every run already remembered), so a number is on screen
+// before Warcraft Logs answers.
 export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps) {
   const now = deps.now ?? Date.now();
   const role = entry.selected ?? entry.detected ?? "dps";
@@ -167,7 +176,9 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
   const lists = deps.lists ?? null;
   const baselines = deps.baselines ?? null;
   const kit = kitFor(lists, cls, spec);
-  const kitIds = new Set([...kit.kit.keys(), ...(kit.kick ? [kit.kick.id] : [])]);
+  const kickIds = new Set(kit.kick ? [kit.kick.id] : []);
+  const kickNameOf = lists ? (c, s) => lists.specs?.[`${c}-${s}`]?.kick?.name ?? null : null;
+  const throughput = throughputFor(role, window, entry.hps ?? null, encounters, level);
   const provenance = [];
 
   // 1. facts cache
@@ -185,7 +196,7 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
   deps.debug?.(`facts: ${facts.size} cached, ${todo.length} to fetch (${todo.map((w) => `${w.code}:${w.fightID}`).join(",")}); keys=${Object.keys(cache).length}`);
   const assessNow = () => assess(orderedFacts(window, facts, name, { cls, role }), role, { baselines, priority: baselines?.priority ?? null, now });
   if (todo.length && deps.onPartial) {
-    try { deps.onPartial({ state: "partial", assess: assessNow(), provenance: provenance.slice(), spec, role }); }
+    try { deps.onPartial({ state: "partial", assess: assessNow(), throughput, provenance: provenance.slice(), spec, role }); }
     catch (e) { deps.log?.(`partial fit: ${e.message}`); }
   }
 
@@ -197,12 +208,11 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
   for (const [i, w] of todo.entries()) {
     const look = looks[i];
     const dangerous = new Set([...(baselines?.dangerousFor?.(w.dungeon) ?? []), ...(lists?.dungeons?.[w.dungeon]?.dangerous ?? []).map(Number)]);
-    const avoidable = new Set((lists?.dungeons?.[w.dungeon]?.avoidable ?? []).map(Number));
-    items.push({ code: w.code, fightID: w.fightID, w, look, kitIds, dangerousIds: dangerous, avoidableIds: avoidable, tables: look.status === "absent" });
+    items.push({ code: w.code, fightID: w.fightID, w, look, kickIds, dangerousIds: dangerous, tables: look.status === "absent" });
     provenance.push({ code: w.code, fightID: w.fightID, source: look.status === "stored" ? "store" : look.status === "absent" ? "live" : "pending" });
   }
 
-  // 3. events (and tables for absent runs), then death windows, then the healer stream
+  // 3. events (and tables for absent runs), one run per request, all in flight together
   let bundles = [];
   if (items.length) {
     try {
@@ -212,48 +222,26 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
       return { state: "none", note: "execution data unavailable" };
     }
   }
-  const prepared = bundles.map((b) => {
-    const selfId = findSelf(b.bundle?.actors, name);
-    const deaths = (b.bundle?.events?.deaths ?? []).filter((d) => d.targetID === selfId).map((d) => d.timestamp).sort((a, c) => a - c);
-    return { ...b, selfId, deaths };
-  });
-  // the death windows and the healer's streams need nothing from each
-  // other: both go out at once
-  const windowsP = (async () => {
-    try {
-      return await fetchWindows(ctx, prepared.map((p) => ({ code: p.code, fightID: p.fightID, deaths: p.deaths, _p: p })));
-    } catch (e) {
-      deps.log?.(`death windows unavailable: ${e.message}`);
-      return prepared.map((p) => ({ ...p, windows: {} }));
-    }
-  })();
-  const streams = new Map();
-  const streamsP = role !== "healer" ? Promise.resolve() : Promise.all(
-    prepared.filter((p) => p.selfId !== null).slice(0, HEALER_STREAM_RUNS).map(async (p) => {
-      try { streams.set(`${p.code}:${p.fightID}`, await fetchHealerStream(ctx, { code: p.code, fightID: p.fightID, healerId: p.selfId })); }
-      catch { /* triage simply stays unknown for this run */ }
-    }));
-  const [withWindows] = await Promise.all([windowsP, streamsP]);
 
-  // 4. runs → facts (cooldowns calibrated over everything we know)
+  // 4. runs → facts (the kick's cooldown calibrated over everything we know)
   const newRuns = [];
-  for (const b of withWindows) {
-    const p = b._p ?? b;
+  for (const p of bundles) {
     const w = p.w;
+    const selfId = findSelf(p.bundle?.actors, name);
     const nameToId = (n) => findSelf(p.bundle?.actors, n);
     let execData = null;
     if (p.look.status === "stored") execData = execFromStoredRun(p.look.run, nameToId);
-    else if (p.bundle?.tables) execData = execFromTables(p.bundle.tables);
-    if (execData?.rows && p.selfId !== null && !execData.rows[p.selfId] && execData.rows[name]) execData.rows[p.selfId] = execData.rows[name];
-    newRuns.push({ key: factsKey(w.code, w.fightID, name), run: normalizeRun(w, { bundle: p.bundle, exec: execData, windows: b.windows ?? {}, healerHeal: streams.get(`${w.code}:${w.fightID}`) ?? null, selfId: p.selfId, cls, role }) });
+    else if (p.bundle?.tables) execData = execFromTables(p.bundle.tables, { kickNameOf });
+    if (execData?.rows && selfId !== null && !execData.rows[selfId] && execData.rows[name]) execData.rows[selfId] = execData.rows[name];
+    newRuns.push({ key: factsKey(w.code, w.fightID, name), run: normalizeRun(w, { bundle: p.bundle, exec: execData, selfId, cls, role }) });
   }
   const calib = mergeCastStats([
     ...[...facts.values()].map((f) => f.casts),
-    ...newRuns.map(({ run }) => castStats(run, kitIds)),
+    ...newRuns.map(({ run }) => castStats(run, kickIds)),
   ]);
   for (const { key, run } of newRuns) {
     const dangerous = new Set([...(baselines?.dangerousFor?.(run.dungeon) ?? []), ...(lists?.dungeons?.[run.dungeon]?.dangerous ?? []).map(Number)]);
-    const f = runFacts(run, { kit, calib: calib.minGap, seen: calib.seen, dangerousIds: dangerous });
+    const f = runFacts(run, { kit, calib: calib.minGap, dangerousIds: dangerous });
     facts.set(key, f);
     cache[key] = { t: now, facts: f };
   }
@@ -267,7 +255,7 @@ export async function assessEntry(entry, dpsResult, encounters, level, ctx, deps
 
   // 5. damage-only runs beyond the execution window still count for damage
   const result = assessNow();
-  return { state: "ready", assess: result, provenance, spec, role };
+  return { state: "ready", assess: result, throughput, provenance, spec, role };
 }
 
 // The facts the measures engine reads, newest first: a run's remembered
@@ -278,7 +266,7 @@ function orderedFacts(window, facts, name, { cls, role }) {
     const k = factsKey(w.code, w.fightID, name);
     const f = facts.get(k);
     if (f) ordered.push(f);
-    else ordered.push({ v: 1, code: w.code, fightID: w.fightID, dungeon: w.dungeon, level: w.level, start: w.start, durationS: w.duration ? w.duration / 1000 : null, timed: w.timed, cls, spec: w.spec, role, amount: w.amount, keyPct: w.keyPct, players: [], own: null, dispel_spells: null, execSource: null, hasEvents: false, deaths: null, selfsave: null, kicks: null, triage: null, triageScore: null, casts: null });
+    else ordered.push({ v: 2, code: w.code, fightID: w.fightID, dungeon: w.dungeon, level: w.level, start: w.start, durationS: w.duration ? w.duration / 1000 : null, timed: w.timed, cls, spec: w.spec, role, amount: w.amount, keyPct: w.keyPct, players: [], own: null, dispel_spells: null, execSource: null, hasEvents: false, kicks: null, stops: null, casts: null });
   }
   return ordered;
 }

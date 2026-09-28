@@ -105,25 +105,24 @@ actually needs from them, using their newest runs at your key level ± 2:
   and level (recency-weighted median over their runs, never the best run).
 - **KICK** — dangerous casts interrupted when their kick was up and nobody
   else could (the population's own kick rate decides what is "dangerous").
-- **SAVE** — when they dropped under 35 % for 1.5 s or more, did they press a
-  defensive, self-heal, healthstone or potion.
-- **DEATHS** — own-fault deaths beyond an allowance of one plus a quarter per
-  run. Chain deaths, one-shots and deaths while the healer was down or two
-  others were already low never count; the first solo death is free.
-- **AVOID** — avoidable damage taken per minute (a curated list per dungeon).
-- Healers: **TRIAGE** (seconds from an ally dropping under 35 % to a direct
-  heal on them) and **DISPEL** instead of HPS, which mostly measures how bad
-  the rest of the group was.
+- **STOP** — casts interrupted with anything that is not the spec's kick
+  (stuns, knocks, incapacitates, silences), per minute vs the cell.
+- Healers add **DISPEL** (own dispels per minute vs the cell, and the share
+  of dispellable debuffs that expired) and see their HPS and DPS as plain
+  numbers beside the score — context, not a measure.
 
-The weights, the death rule and why each measure was chosen are in
+Weights: DPS 60 / 25 / 15 (DMG / KICK / STOP), tanks 40 / 35 / 25, healers
+15 / 30 / 25 / 30 (DMG / KICK / STOP / DISPEL). Deaths, defensives and
+avoidable damage are not scored on their own: the damage number already
+carries them. Why each measure was chosen is in
 [`design/pug-measures.md`](design/pug-measures.md); the evidence behind them
 was collected from real Season 2 logs. Population baselines and per-run
 tables come from the companion collector (`st331/wowlogs`,
 [`design/baselines-from-wowlogs.md`](design/baselines-from-wowlogs.md)):
 a run it already holds is never pulled from Warcraft Logs again, this site
-pulls only what nobody else fetches (death windows, low-HP episodes, casts),
-and every analysed run is remembered in your browser for two weeks. The
-**⚔ Key fit** button turns the column off if you only want Key %.
+pulls only what nobody else fetches (interrupt and kick events, the dangerous
+enemy casts), and every analysed run is remembered in your browser for two
+weeks. The **⚔ Key fit** button turns the column off if you only want Key %.
 
 Key fit is built to keep up with a queue of applicants. The DMG part is on
 screen with the row itself (the rankings already hold it); the execution
@@ -198,8 +197,8 @@ scripts/test.sh     run everything
   players.
 - The API client allows 18,000 points/hour, shared with the wowlogs collector
   (which spends ~10,000 of them). Key % costs 8 points per character; Key fit
-  adds roughly 7 points per analysed run (about 60 per new applicant, nothing
-  for runs already seen). The site sends every character's request in
+  adds roughly 4 to 7 points per analysed run (about 40 per new applicant,
+  nothing for runs already seen). The site sends every character's request in
   parallel, batches all dungeons per character into single requests, and
   caches the token (~1 year), the season list (3h), each looked-up character
   (1h — **⟳ Fresh data** re-fetches) and each analysed run (14 days). The season is auto-detected, so a new
