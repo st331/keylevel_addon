@@ -6,9 +6,10 @@
 // lives in the repo source or its history.
 //
 // Honesty note: whatever the deployed site ships, a visitor can extract —
-// the browser has to send it to warcraftlogs.com. For this API that only
-// exposes the client's shared 3600 points/hour quota (it cannot access the
-// account or private logs). Regenerate the secret on the WCL clients page
+// the browser has to send it to warcraftlogs.com. For this API that exposes
+// the account's 18,000 points/hour quota, shared by every client on the
+// account (it cannot access the account or private logs). Regenerate the
+// secret on the WCL clients page
 // and re-deploy if it's ever abused.
 
 export const EMBEDDED_CLIENT_ID = "019f5e9a-b2bd-71fd-957f-8dae7ba58c5b";

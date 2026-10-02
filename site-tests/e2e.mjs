@@ -351,10 +351,12 @@ async function check(name, fn) {
   }
 }
 
-async function newPage() {
+// fitOn: seed the visitor's own "Key fit on" choice (Key fit is off by default)
+async function newPage({ fitOn = false } = {}) {
   const page = await (await browser.newContext()).newPage();
   page.on("pageerror", (e) => { failed++; console.error("not ok - page error: " + e.message); });
-  await page.addInitScript(({ tokenUrl, apiUrl, rioUrl, baselinesUrl, runStoreUrl }) => {
+  await page.addInitScript(({ tokenUrl, apiUrl, rioUrl, baselinesUrl, runStoreUrl, fitOn }) => {
+    if (fitOn) localStorage.setItem("kllFitOn", "1");
     localStorage.setItem("kllTokenUrl", tokenUrl);
     localStorage.setItem("kllApiUrl", apiUrl);
     localStorage.setItem("kllRioUrl", rioUrl);
@@ -366,6 +368,7 @@ async function newPage() {
     rioUrl: `http://127.0.0.1:${rio.port}/profile`,
     baselinesUrl: `http://127.0.0.1:${wowlogs.port}/baselines.json.gz`,
     runStoreUrl: `http://127.0.0.1:${wowlogs.port}/runs/`,
+    fitOn,
   });
   return page;
 }
@@ -383,6 +386,14 @@ try {
 
     await check("zero-setup: auto-runs with nothing stored in the browser", async () => {
       await page.waitForSelector("table.summary", { timeout: 10_000 });
+    });
+
+    await check("zero-setup: Key fit is off by default and pulls no report", async () => {
+      await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("done"));
+      assert.match(await page.locator("#fit").innerText(), /Key fit off/);
+      assert.equal(await page.locator("#fit.on").count(), 0, "the button is not lit");
+      assert.equal(await page.locator(".fit-score").count(), 0, "no composite anywhere");
+      assert.equal((wcl.state.reportQueries ?? []).length, 0, "not one report query: Key % only");
     });
 
     await check("zero-setup: no setup UI exists on the page", async () => {
@@ -852,7 +863,7 @@ try {
 
   // ============ scenario 1d: Key fit (Set B) ================================
   {
-    const page = await newPage();
+    const page = await newPage({ fitOn: true });
     await page.goto(`http://127.0.0.1:${deployedSrv.port}/index.html?region=us&level=12&dungeon=Windrunner%20Spire&chars=Fitguy-Area52,Foo-Area52,Healguy-Area52`);
     await page.waitForSelector("table.summary", { timeout: 10_000 });
     const row = () => page.locator('tr.row[data-key="Fitguy-Area52@us"]');
@@ -939,7 +950,7 @@ try {
 
     await check("key fit: the toggle turns the column off and remembers it", async () => {
       await page.click("#fit");
-      assert.equal(await page.evaluate(() => localStorage.getItem("kllFit")), "0");
+      assert.equal(await page.evaluate(() => localStorage.getItem("kllFitOn")), "0");
       assert.match(await row().locator(".fit-cell").innerText(), /^—$/);
       await page.click("#fit");
       await page.waitForSelector('tr.row[data-key="Fitguy-Area52@us"] .fit-score', { timeout: 20_000 });
@@ -955,6 +966,15 @@ try {
 
     await check("plain visit: key level defaults to 12", async () => {
       assert.equal(await page.inputValue("#level"), "12");
+    });
+
+    await check("plain visit: a browser that saved the old 'Key fit on' starts with it off", async () => {
+      const legacy = await newPage();
+      await legacy.addInitScript(() => localStorage.setItem("kllFit", "1"));
+      await legacy.goto(`http://127.0.0.1:${deployedSrv.port}/index.html`);
+      await legacy.waitForFunction(() => /Key fit off/.test(document.querySelector("#fit")?.textContent ?? ""));
+      assert.equal(await legacy.locator("#fit.on").count(), 0);
+      await legacy.context().close();
     });
 
     await check("plain visit: dungeon dropdown fills without a lookup", async () => {

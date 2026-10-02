@@ -71,8 +71,9 @@ re-run the deploy workflow.
 **Security model, honestly:** GitHub Actions secrets are encrypted and never
 served to visitors, but the *deployed page* must send the secret to
 warcraftlogs.com, so a visitor who digs through the site's JS can extract
-it. For this API that only exposes your client's shared 3,600 points/hour
-quota — it cannot access your account or private logs. If it's ever abused,
+it. For this API that exposes your account's 18,000 points/hour quota, which
+every client on the account shares (the wowlogs collector included), but not
+your account or private logs. If it's ever abused,
 regenerate the secret on the WCL clients page, update the Actions secret,
 and re-run the deploy. A test guards against a real secret ever being
 committed to the repo itself.
@@ -122,7 +123,10 @@ tables come from the companion collector (`st331/wowlogs`,
 a run it already holds is never pulled from Warcraft Logs again, this site
 pulls only what nobody else fetches (interrupt and kick events, the dangerous
 enemy casts), and every analysed run is remembered in your browser for two
-weeks. The **⚔ Key fit** button turns the column off if you only want Key %.
+weeks. Key fit is **off by default**: it costs about 100 Warcraft Logs points
+per new applicant against 8 for Key %, and the hourly quota is shared by your
+whole account. The **⚔ Key fit** button turns it on, and the choice is
+remembered in your browser.
 
 Key fit is built to keep up with a queue of applicants. The DMG part is on
 screen with the row itself (the rankings already hold it); the execution
@@ -195,10 +199,12 @@ scripts/test.sh     run everything
 - A player who doesn't log shows `no WCL character` even if experienced —
   same answer the website gives. Data is per character: alts look like new
   players.
-- The API client allows 18,000 points/hour, shared with the wowlogs collector
-  (which spends ~10,000 of them). Key % costs 8 points per character; Key fit
-  adds roughly 4 to 7 points per analysed run (about 40 per new applicant,
-  nothing for runs already seen). The site sends every character's request in
+- Warcraft Logs meters 18,000 points/hour per **account**, shared by every
+  client on it, the wowlogs collector included (it spends up to 70 % of the
+  hour it runs in, once every 4 hours). Key % costs 8 points per character;
+  Key fit adds roughly 11 to 14 points per analysed run that the collector
+  does not hold, about 100 to 125 per new applicant (nothing for runs already
+  seen), which is why it is off by default. The site sends every character's request in
   parallel, batches all dungeons per character into single requests, and
   caches the token (~1 year), the season list (3h), each looked-up character
   (1h — **⟳ Fresh data** re-fetches) and each analysed run (14 days). The season is auto-detected, so a new

@@ -36,7 +36,9 @@ const LS = {
   apiUrl: "kllApiUrl",
   rioUrl: "kllRioUrl",
   autoPaste: "kllAutoPaste",
-  fit: "kllFit",
+  // "1" only when the visitor turned Key fit on. A new key (was kllFit,
+  // on unless "0"), so every browser starts with it off once.
+  fit: "kllFitOn",
   baselinesUrl: "kllBaselinesUrl",
   runStoreUrl: "kllRunStoreUrl",
   listsUrl: "kllListsUrl",
@@ -357,7 +359,7 @@ async function lookup(ev) {
 // listing level. Population baselines and the per-run store come from the
 // wowlogs collector; only what nobody else fetches is pulled live.
 
-let fitOn = true;
+let fitOn = false;
 let fitGeneration = 0;
 const runStores = new Map(); // baseUrl -> RunStore (keeps its shard cache)
 
@@ -372,8 +374,8 @@ function setFitUI() {
   btn.classList.toggle("on", fitOn);
   btn.textContent = fitOn ? "⚔ Key fit on" : "⚔ Key fit off";
   btn.title = fitOn
-    ? "Execution measures are computed for every applicant (a few Warcraft Logs points per run). Click to turn off."
-    : "Only the Key % table is shown. Click to compute the execution measures too.";
+    ? "Execution measures are computed for every applicant: about 100 Warcraft Logs points per new applicant, against 8 for Key %. Click to turn off."
+    : "Only the Key % table is shown (8 Warcraft Logs points per character). Click to compute the execution measures too: about 100 points per new applicant.";
 }
 
 async function computeFits(entries, results, zone, level, ctx) {
@@ -677,8 +679,10 @@ export function init() {
     $(id).addEventListener("change", () => { lastSignature = null; scheduleLookup(PASTE_DELAY); });
   }
 
-  // key fit toggle (on by default)
-  fitOn = localStorage.getItem(LS.fit) !== "0";
+  // key fit toggle: OFF by default (owner, 2026-10-02). It costs about
+  // 100 points per new applicant against 8 for Key %, so a busy vetting
+  // session could empty the account's shared hourly quota on its own.
+  fitOn = localStorage.getItem(LS.fit) === "1";
   setFitUI();
   $("fit")?.addEventListener("click", () => {
     fitOn = !fitOn;
