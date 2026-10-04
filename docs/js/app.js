@@ -8,7 +8,7 @@
 import { parseEntriesInput, dedupeEntries, slugCandidates, looksLikeRoster } from "./slugs.js";
 import { getToken, listZones, guessMythicPlusZone, fetchCharactersParallel, WclError, DEFAULT_TOKEN_URL, DEFAULT_API_URL } from "./wcl.js";
 import { playerFromResult, encounterByName, windowLevels, rolesWithRuns, buildRolePlayers, pickSelectedRole } from "./transform.js";
-import { summaryHTML } from "./render.js";
+import { summaryHTML, nextSort, validSort } from "./render.js";
 import { embeddedCredentials } from "./config.js";
 import { cacheKey, pruneCache, slimResult } from "./cache.js";
 import { fetchScores, DEFAULT_RIO_URL } from "./rio.js";
@@ -39,6 +39,7 @@ const LS = {
   // "1" only when the visitor turned Key fit on. A new key (was kllFit,
   // on unless "0"), so every browser starts with it off once.
   fit: "kllFitOn",
+  sort: "kllSort",
   baselinesUrl: "kllBaselinesUrl",
   runStoreUrl: "kllRunStoreUrl",
   listsUrl: "kllListsUrl",
@@ -378,12 +379,17 @@ function setFitUI() {
     : "Only the Key % table is shown (8 Warcraft Logs points per character). Click to compute the execution measures too: about 100 points per new applicant.";
 }
 
+// The fit computed for the role shown at lookup time is also what the Key
+// fit column sorts on (fitSort), so re-judging one row through its role
+// chips never reshuffles the list.
+function setFit(e, fit) { e.fit = fit; e.fitSort = fit; }
+
 async function computeFits(entries, results, zone, level, ctx) {
   if (!fitOn) return;
   const generation = ++fitGeneration;
   for (const e of entries) {
     const has = results.get(e.key) && !e.player?.missing;
-    e.fit = has ? { state: "pending", note: "computing…" } : { state: "none", note: "—" };
+    setFit(e, has ? { state: "pending", note: "computing…" } : { state: "none", note: "—" });
   }
   renderResults();
   const [lists, baselines] = await Promise.all([
@@ -398,12 +404,12 @@ async function computeFits(entries, results, zone, level, ctx) {
       if (generation !== fitGeneration) return; // a newer lookup took over
       // what the rankings alone say goes on screen at once; the execution
       // measures replace it when Warcraft Logs has answered
-      const onPartial = (fit) => { if (generation === fitGeneration) { e.fit = fit; renderResults(); } };
+      const onPartial = (fit) => { if (generation === fitGeneration) { setFit(e, fit); renderResults(); } };
       try {
-        e.fit = await assessEntry(e, results.get(e.key), zone.encounters, level, ctx, { ...deps, onPartial });
+        setFit(e, await assessEntry(e, results.get(e.key), zone.encounters, level, ctx, { ...deps, onPartial }));
       } catch (err) {
         console.warn("[fit]", err);
-        e.fit = { state: "none", note: "execution data unavailable" };
+        setFit(e, { state: "none", note: "execution data unavailable" });
       }
       if (generation === fitGeneration) renderResults();
     }
@@ -414,6 +420,17 @@ async function computeFits(entries, results, zone, level, ctx) {
 // last successful lookup, kept so role-chip clicks can re-render without
 // refetching (all roles' tables are already built)
 let lastRender = null;
+let sortState = null; // { col, dir } or null = the default order (render.js)
+
+function loadSort() {
+  try { return validSort(JSON.parse(localStorage.getItem(LS.sort) || "null")); } catch { return null; }
+}
+function saveSort(sort) {
+  try {
+    if (sort) localStorage.setItem(LS.sort, JSON.stringify(sort));
+    else localStorage.removeItem(LS.sort);
+  } catch { /* storage full or blocked: the sort still applies this visit */ }
+}
 
 // a role the user picked by clicking a chip, kept across re-lookups so a
 // fresh paste doesn't undo their choice mid-vetting
@@ -428,12 +445,15 @@ function renderResults() {
   // so keyboard users don't get dumped back to the top of the page
   const focused = document.activeElement?.closest?.("button.role[data-role]");
   const focusKey = focused ? `${focused.dataset.key} ${focused.dataset.role}` : null;
-  $("results").innerHTML = summaryHTML(lastRender.entries, lastRender);
+  const focusedSort = document.activeElement?.closest?.("button.sort[data-sort]")?.dataset.sort ?? null;
+  $("results").innerHTML = summaryHTML(lastRender.entries, { ...lastRender, sort: sortState });
   for (const row of document.querySelectorAll("tr.detail-row")) {
     if (open.has(row.dataset.key)) row.classList.add("open");
   }
   wireRowToggles();
   wireRoleChips();
+  wireSortHeaders();
+  if (focusedSort) document.querySelector(`button.sort[data-sort="${focusedSort}"]`)?.focus();
   if (focusKey) {
     for (const btn of document.querySelectorAll("button.role[data-role]")) {
       if (`${btn.dataset.key} ${btn.dataset.role}` === focusKey) {
@@ -450,6 +470,17 @@ function wireRowToggles() {
       if (ev.target.closest("a, button")) return; // profile link / role chip
       const detail = document.querySelector(`tr.detail-row[data-idx="${row.dataset.idx}"]`);
       if (detail) detail.classList.toggle("open");
+    });
+  }
+}
+
+// a header click steps that column through best first, reversed, default
+function wireSortHeaders() {
+  for (const btn of document.querySelectorAll("button.sort[data-sort]")) {
+    btn.addEventListener("click", () => {
+      sortState = nextSort(sortState, btn.dataset.sort);
+      saveSort(sortState);
+      renderResults();
     });
   }
 }
@@ -679,6 +710,8 @@ export function init() {
     $(id).addEventListener("change", () => { lastSignature = null; scheduleLookup(PASTE_DELAY); });
   }
 
+  sortState = loadSort();
+
   // key fit toggle: OFF by default (owner, 2026-10-02). It costs about
   // 100 points per new applicant against 8 for Key %, so a busy vetting
   // session could empty the account's shared hourly quota on its own.
@@ -689,7 +722,7 @@ export function init() {
     localStorage.setItem(LS.fit, fitOn ? "1" : "0");
     setFitUI();
     if (fitOn && lastRender?.results) computeFits(lastRender.entries, lastRender.results, { encounters: lastRender.encounters }, lastRender.level, lastRender.ctx);
-    else if (!fitOn) { for (const e of lastRender?.entries ?? []) e.fit = null; renderResults(); }
+    else if (!fitOn) { for (const e of lastRender?.entries ?? []) setFit(e, null); renderResults(); }
   });
 
   // auto-paste: hidden entirely where the permission model can't support it
