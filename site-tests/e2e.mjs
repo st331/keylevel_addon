@@ -526,6 +526,70 @@ try {
       assert.deepEqual(names, ["Eurodude-TwistingNether", "Switcher-Area52", "Foo-Area52", "Priestess-Area52", "Eurodude-TwistingNether", "Ghost-Sargeras"]);
     });
 
+    // ---- column sorting (the default order above is what a third click restores)
+    const DEFAULT_ORDER = ["Eurodude-TwistingNether", "Switcher-Area52", "Foo-Area52", "Priestess-Area52", "Eurodude-TwistingNether", "Ghost-Sargeras"];
+    const names = () => page.locator("tr.row .charname").allInnerTexts();
+    const sortBtn = (col) => page.locator(`button.sort[data-sort="${col}"]`);
+    const ariaSort = (col) => page.locator(`th:has(button.sort[data-sort="${col}"])`).getAttribute("aria-sort");
+
+    await check("sort: Applicant goes A to Z, then Z to A, then back to the default order", async () => {
+      await sortBtn("name").click();
+      assert.deepEqual(await names(), ["Eurodude-TwistingNether", "Eurodude-TwistingNether", "Foo-Area52", "Ghost-Sargeras", "Priestess-Area52", "Switcher-Area52"]);
+      assert.equal(await ariaSort("name"), "ascending");
+      assert.equal(await sortBtn("name").locator(".sort-arrow").innerText(), "▲");
+      await sortBtn("name").click();
+      assert.deepEqual(await names(), ["Switcher-Area52", "Priestess-Area52", "Ghost-Sargeras", "Foo-Area52", "Eurodude-TwistingNether", "Eurodude-TwistingNether"]);
+      assert.equal(await ariaSort("name"), "descending");
+      await sortBtn("name").click();
+      assert.deepEqual(await names(), DEFAULT_ORDER);
+      assert.equal(await ariaSort("name"), "none");
+      assert.equal(await page.evaluate(() => localStorage.getItem("kllSort")), null, "the default is not stored");
+    });
+
+    await check("sort: Any dungeon ranks the best first, and a player with no WCL character stays last both ways", async () => {
+      await sortBtn("any").click();
+      const desc = await names();
+      assert.equal(desc.at(-1), "Ghost-Sargeras");
+      await sortBtn("any").click();
+      const asc = await names();
+      assert.equal(asc.at(-1), "Ghost-Sargeras", "still last when reversed");
+      assert.deepEqual(asc.slice(0, -1), desc.slice(0, -1).reverse(), "the rest is exactly reversed");
+      await sortBtn("any").click();
+      assert.deepEqual(await names(), DEFAULT_ORDER);
+    });
+
+    await check("sort: the choice survives a new lookup and a reload", async () => {
+      await sortBtn("name").click();
+      await page.click("#lookup");
+      await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("done"));
+      assert.equal(await ariaSort("name"), "ascending", "kept across a lookup");
+      assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem("kllSort"))), { col: "name", dir: "asc" });
+      await page.reload();
+      await page.waitForSelector("table.summary", { timeout: 10_000 });
+      await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("done"));
+      assert.equal(await ariaSort("name"), "ascending", "kept across a reload");
+      assert.equal((await names())[0], "Eurodude-TwistingNether");
+      await sortBtn("name").click();
+      await sortBtn("name").click();
+      assert.deepEqual(await names(), DEFAULT_ORDER, "back to the default for the checks below");
+    });
+
+    await check("sort: an open row stays open, and the keyboard keeps its place on the header", async () => {
+      await page.locator("tr.row", { hasText: "Priestess-Area52" }).click();
+      const key = await page.locator("tr.row", { hasText: "Priestess-Area52" }).getAttribute("data-key");
+      await sortBtn("dungeon").focus();
+      await page.keyboard.press("Enter");
+      assert.equal(await ariaSort("dungeon"), "descending");
+      assert.equal(await page.evaluate(() => document.activeElement?.dataset?.sort), "dungeon", "focus stays on the header button");
+      assert.equal(await page.locator(`tr.detail-row.open[data-key="${key}"]`).count(), 1, "the open detail row is still open");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Enter");
+      assert.equal(await ariaSort("dungeon"), "none");
+      await page.locator("tr.row", { hasText: "Priestess-Area52" }).click(); // close it again
+      assert.equal(await page.locator("tr.detail-row.open").count(), 0);
+      assert.deepEqual(await names(), DEFAULT_ORDER);
+    });
+
     await check("typed name + armory URL of the same character = one row", async () => {
       assert.equal(await page.locator("tr.row", { hasText: "Foo-Area52" }).count(), 1);
     });
@@ -926,6 +990,20 @@ try {
       const dispel = await healerRow().locator(".fit-chip", { hasText: "DISPEL" }).getAttribute("title");
       assert.match(dispel, /over 5 run\(s\)/, "the stored run and the four live ones carry dispels; the fresh one does not");
       assert.doesNotMatch(text, /DEATHS|TRIAGE|⚑/);
+    });
+
+    await check("sort: Key fit puts the highest composite first; rows without one go last", async () => {
+      await page.locator('button.sort[data-sort="fit"]').click();
+      const scores = await page.locator("tr.row").evaluateAll((rows) => rows.map((r) => {
+        const t = r.querySelector(".fit-score")?.textContent ?? "";
+        return t ? parseInt(t, 10) : null;
+      }));
+      const scored = scores.filter((v) => v !== null);
+      assert.ok(scored.length >= 2, `at least two composites to order (${scores})`);
+      assert.deepEqual(scored, [...scored].sort((a, b) => b - a), `highest first: ${scores}`);
+      assert.deepEqual(scores.slice(0, scored.length), scored, "every scored row above every unscored one");
+      await page.locator('button.sort[data-sort="fit"]').click();
+      await page.locator('button.sort[data-sort="fit"]').click(); // back to the default
     });
 
     await check("key fit: an applicant with one run gets no composite, and says so", async () => {

@@ -87,6 +87,14 @@ table.summary th{
   background:var(--panel);
 }
 table.summary td{ padding:10px 14px; border-bottom:1px solid var(--grid); font-size:.92rem }
+/* sortable headers: the whole label is the button */
+table.summary th button.sort{
+  all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+  color:inherit; font:inherit; letter-spacing:inherit; text-transform:inherit;
+}
+table.summary th button.sort:hover, table.summary th button.sort.active{ color:var(--ink); filter:none }
+table.summary th button.sort:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; border-radius:4px }
+table.summary th .sort-arrow{ color:var(--gold); font-size:.6rem; min-width:.8em }
 table.summary tbody tr:last-child td{ border-bottom:0 }
 tr.row{ cursor:pointer }
 tr.row:hover td{ background:var(--panel2) }

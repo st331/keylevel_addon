@@ -128,6 +128,12 @@ per new applicant against 8 for Key %, and the hourly quota is shared by your
 whole account. The **⚔ Key fit** button turns it on, and the choice is
 remembered in your browser.
 
+Click any column header to sort by it: the first click puts the best first
+(names A to Z), the second reverses it, the third goes back to the default
+order (this dungeon, then any dungeon). Players with nothing in that column
+stay at the bottom, the Key fit sort uses the role shown at lookup so a role
+chip never reshuffles the list, and the choice is remembered in your browser.
+
 Key fit is built to keep up with a queue of applicants. The DMG part is on
 screen with the row itself (the rankings already hold it); the execution
 measures follow, one Warcraft Logs request per run with every request in

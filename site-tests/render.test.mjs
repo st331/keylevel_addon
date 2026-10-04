@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { esc, pctSpan, pctTag, bamHTML, ageText, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML, roleChipsHTML, formatAmount, metricLabel } from "../docs/js/render.js";
+import { esc, pctSpan, pctTag, bamHTML, ageText, anyCellHTML, dungeonCellHTML, nameHTML, profileLinkHTML, detailMatrixHTML, summaryHTML, roleChipsHTML, formatAmount, metricLabel, nextSort, validSort } from "../docs/js/render.js";
 import { playerFromResult, buildRolePlayers } from "../docs/js/transform.js";
 
 const AK = 12660, COT = 12669;
@@ -304,8 +304,8 @@ test("summaryHTML places scores in the applicant cell, not a new column", () => 
   }];
   const html = summaryHTML(entries, { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS });
   assert.match(html, /class="scores"/);
-  const headers = (html.match(/<th>/g) ?? []).length;
-  assert.equal(headers, 3, "still three columns");
+  const headers = (/<thead>([\s\S]*?)<\/thead>/.exec(html)[1].match(/<th[ >]/g) ?? []).length;
+  assert.equal(headers, 4, "still four columns: applicant, key fit, any dungeon, this dungeon");
   // the score sits inside the same cell as the name
   const cell = /<td>([\s\S]*?)<\/td>/.exec(html)[1];
   assert.match(cell, /Alice-Area52/);
@@ -463,4 +463,81 @@ test("fitDetailHTML lists the measures and the provenance", () => {
   assert.ok(!/Deaths, classified|Flags|POTIONS/.test(html), "no death list, no flags, no potion line");
   assert.match(html, /1 store · 1 live · 1 cached/);
   assert.equal(fitDetailHTML({ state: "pending" }), "");
+});
+
+/* ---------------- column sorting ---------------- */
+
+const rank = (enc, pct, level) => ({ [`e${enc}`]: { ranks: [{ rankPercent: pct, bracketData: level, spec: "Fire" }] } });
+const SORTERS = {
+  alice: alice,                                                          // AK 91.2 @12, CoT 71 @12
+  bob: playerFromResult({ classID: 4, ...rank(AK, 60, 12) }),            // AK 60 @12
+  carl: playerFromResult({ classID: 4, ...rank(COT, 99, 10) }),          // nothing at +12; CoT 99 @10; never AK
+  dave: playerFromResult({ classID: 4, ...rank(AK, 50, 10) }),           // nothing at +12; AK 50 @10 only
+};
+const composite = (pct) => ({ state: "ready", assess: { composite: { pct, presentWeight: 100 }, weights: {}, measures: {}, runs: 6, present: [] } });
+const sortEntries = () => [
+  { fullName: "Dave-Realm", player: SORTERS.dave, slug: "realm", region: "us" },
+  { fullName: "Ghost-Realm", player: ghost, slug: "realm", region: "us" },
+  { fullName: "Carl-Realm", player: SORTERS.carl, slug: "realm", region: "us", fit: { state: "pending", note: "computing…" } },
+  { fullName: "Bob-Realm", player: SORTERS.bob, slug: "realm", region: "us", fit: composite(70) },
+  // re-judged through a role chip: shows 90, but sorts on the lookup's 40
+  { fullName: "Alice-Realm", player: SORTERS.alice, slug: "realm", region: "us", fit: composite(90), fitSort: composite(40) },
+];
+const order = (sort) => {
+  const html = summaryHTML(sortEntries(), { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS, sort });
+  return [...html.matchAll(/<tr class="row" data-idx="\d+" data-key="([^"]+)"/g)].map((m) => m[1].split("-")[0]);
+};
+
+test("nextSort: natural direction, reversed, then back to the default", () => {
+  let s = null;
+  s = nextSort(s, "any"); assert.deepEqual(s, { col: "any", dir: "desc" }, "numbers: best first");
+  s = nextSort(s, "any"); assert.deepEqual(s, { col: "any", dir: "asc" });
+  s = nextSort(s, "any"); assert.equal(s, null, "third click: the default order");
+  assert.deepEqual(nextSort(null, "name"), { col: "name", dir: "asc" }, "names: A to Z first");
+  assert.deepEqual(nextSort({ col: "name", dir: "asc" }, "name"), { col: "name", dir: "desc" });
+  assert.deepEqual(nextSort({ col: "any", dir: "asc" }, "fit"), { col: "fit", dir: "desc" }, "another column starts fresh");
+  assert.deepEqual(nextSort({ col: "fit", dir: "desc" }, "bogus"), { col: "fit", dir: "desc" }, "an unknown column changes nothing");
+});
+
+test("validSort keeps only a known column and direction", () => {
+  assert.deepEqual(validSort({ col: "dungeon", dir: "asc", extra: 1 }), { col: "dungeon", dir: "asc" });
+  for (const bad of [null, undefined, {}, { col: "dps", dir: "asc" }, { col: "any", dir: "up" }, "any"]) assert.equal(validSort(bad), null);
+});
+
+test("default order is unchanged: this dungeon first, then any dungeon", () => {
+  assert.deepEqual(order(null), ["Alice", "Bob", "Dave", "Carl", "Ghost"],
+    "Dave's lower-key run in this dungeon outranks Carl, who never ran it");
+});
+
+test("sort by applicant: A to Z, then Z to A", () => {
+  assert.deepEqual(order({ col: "name", dir: "asc" }), ["Alice", "Bob", "Carl", "Dave", "Ghost"]);
+  assert.deepEqual(order({ col: "name", dir: "desc" }), ["Ghost", "Dave", "Carl", "Bob", "Alice"]);
+});
+
+test("sort by any dungeon: the key level's number ranks above a lower-level best; no data stays last", () => {
+  assert.deepEqual(order({ col: "any", dir: "desc" }), ["Alice", "Bob", "Carl", "Dave", "Ghost"],
+    "91 and 60 at +12, then Carl's 99 and Dave's 50 from lower keys, then no character");
+  assert.deepEqual(order({ col: "any", dir: "asc" }), ["Dave", "Carl", "Bob", "Alice", "Ghost"],
+    "reversed, but the row with nothing to sort on is still last");
+});
+
+test("sort by this dungeon: a run at the key level above an only-lower best; never logged stays last", () => {
+  assert.deepEqual(order({ col: "dungeon", dir: "desc" }), ["Alice", "Bob", "Dave", "Carl", "Ghost"]);
+  assert.deepEqual(order({ col: "dungeon", dir: "asc" }), ["Dave", "Bob", "Alice", "Carl", "Ghost"]);
+});
+
+test("sort by Key fit: the lookup's own fit (fitSort) decides; no composite stays last", () => {
+  assert.deepEqual(order({ col: "fit", dir: "desc" }), ["Bob", "Alice", "Carl", "Dave", "Ghost"],
+    "Bob 70 above Alice's 40, though Alice's re-judged row shows 90");
+  assert.deepEqual(order({ col: "fit", dir: "asc" }), ["Alice", "Bob", "Carl", "Dave", "Ghost"]);
+});
+
+test("headers are sort buttons; only the active one is marked", () => {
+  const html = summaryHTML(sortEntries(), { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS, sort: { col: "any", dir: "desc" } });
+  for (const col of ["name", "fit", "any", "dungeon"]) assert.match(html, new RegExp(`<button type="button" class="sort[^"]*" data-sort="${col}"`));
+  assert.match(html, /<th aria-sort="descending"><button type="button" class="sort active" data-sort="any"[^>]*>Any dungeon @\+12<span class="sort-arrow" aria-hidden="true">▼<\/span>/);
+  assert.equal((html.match(/aria-sort="none"/g) ?? []).length, 3, "the other three headers are not sorted");
+  assert.match(html, /data-sort="any" title="Sort by any-dungeon Key %, lowest first"/, "the tooltip says what the next click does");
+  const plain = summaryHTML(sortEntries(), { level: 12, encounter: ENCOUNTERS[0], encounters: ENCOUNTERS });
+  assert.equal((plain.match(/aria-sort="none"/g) ?? []).length, 4, "default order: no header is marked");
 });

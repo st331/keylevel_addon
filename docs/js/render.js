@@ -245,28 +245,107 @@ export function detailMatrixHTML(player, encounters, targetLevel) {
   return `<table class="detail">${head}${body}</table>${note}`;
 }
 
+// ------------------------------------------------------------------
+// Column sorting. sort is { col, dir } with col one of SORT_COLUMNS and dir
+// "asc" | "desc", or null for the default order (this dungeon, then any
+// dungeon: transform.sortValue). A header click steps through the column's
+// natural direction (best first; names A-Z), the reverse, then back to the
+// default. Rows with nothing to sort on stay at the bottom either way; ties
+// fall back to the name.
+
+export const SORT_COLUMNS = ["name", "fit", "any", "dungeon"];
+const NATURAL_DIR = { name: "asc", fit: "desc", any: "desc", dungeon: "desc" };
+
+export function nextSort(sort, col) {
+  if (!SORT_COLUMNS.includes(col)) return sort ?? null;
+  const natural = NATURAL_DIR[col];
+  if (sort?.col !== col) return { col, dir: natural };
+  if (sort.dir === natural) return { col, dir: natural === "asc" ? "desc" : "asc" };
+  return null;
+}
+
+// a stored or hand-made value -> a valid sort, or null (the default)
+export function validSort(sort) {
+  return sort && SORT_COLUMNS.includes(sort.col) && (sort.dir === "asc" || sort.dir === "desc")
+    ? { col: sort.col, dir: sort.dir } : null;
+}
+
+// [tier, value]: a higher tier always ranks above a lower one (the cell's
+// main number above its fallback), null = nothing to sort on.
+function columnKey(col, row) {
+  const ev = row.sortEv;
+  if (col === "fit") {
+    const pct = row.fitSort?.assess?.composite?.pct;
+    return typeof pct === "number" ? [1, pct] : null;
+  }
+  if (ev.status !== "OK") return null;
+  if (col === "any") {
+    if (ev.anyAtLevel) return [2, ev.anyAtLevel.pct];
+    if (ev.anyBest) return [1, ev.anyBest.pct];
+    return null;
+  }
+  if (col === "dungeon") {
+    if (ev.dungeon) return [2, ev.dungeon.pct];
+    if (ev.dungeonBest) return [1, ev.dungeonBest.pct];
+    return null;
+  }
+  return null;
+}
+
+const byName = (a, b) => a.fullName.localeCompare(b.fullName, undefined, { sensitivity: "base" })
+  || String(a.key ?? "").localeCompare(String(b.key ?? ""));
+
+export function compareRows(a, b, sort) {
+  const s = validSort(sort);
+  if (!s) return a.sort !== b.sort ? b.sort - a.sort : byName(a, b);
+  const sign = s.dir === "asc" ? 1 : -1;
+  if (s.col === "name") return sign * byName(a, b);
+  const ka = columnKey(s.col, a), kb = columnKey(s.col, b);
+  if (!ka || !kb) return ka ? -1 : kb ? 1 : byName(a, b); // nothing to sort on: last
+  if (ka[0] !== kb[0]) return sign * (ka[0] - kb[0]);
+  if (ka[1] !== kb[1]) return sign * (ka[1] - kb[1]);
+  return byName(a, b);
+}
+
+const SORT_LABELS = { name: "applicant name", fit: "Key fit", any: "any-dungeon Key %", dungeon: "this dungeon's Key %" };
+
+function sortHeadHTML(col, label, sort, extraTitle = "") {
+  const s = validSort(sort);
+  const active = s?.col === col;
+  const aria = active ? (s.dir === "asc" ? "ascending" : "descending") : "none";
+  const arrow = active ? (s.dir === "asc" ? "▲" : "▼") : "";
+  const next = nextSort(s, col);
+  const action = next
+    ? `Sort by ${SORT_LABELS[col]}, ${next.col === "name" ? (next.dir === "asc" ? "A to Z" : "Z to A") : (next.dir === "desc" ? "highest first" : "lowest first")}`
+    : "Back to the default order (this dungeon, then any dungeon)";
+  const title = extraTitle ? `${extraTitle}. ${action}` : action;
+  return `<th aria-sort="${aria}"><button type="button" class="sort${active ? " active" : ""}" data-sort="${col}" title="${esc(title)}">${label}<span class="sort-arrow" aria-hidden="true">${arrow}</span></button></th>`;
+}
+
 // The main summary table.
 // entries: [{ fullName, player (windowed), slug, region,
-//             detected?, selected?, sortRole?, order?, topKeys?, byRole? }]
+//             detected?, selected?, sortRole?, order?, topKeys?, byRole?,
+//             fit?, fitSort? }]
 // player is the active view; sorting always follows the sortRole (the
 // initially shown role) so toggling one row's chips never reshuffles
-// the list.
-export function summaryHTML(entries, { level, encounter, encounters }) {
+// the list. For the same reason the Key fit sort reads fitSort (the fit
+// computed for the sortRole) when app.js provides it.
+export function summaryHTML(entries, { level, encounter, encounters, sort = null }) {
   const rows = entries
     .map((entry) => {
       const { player, byRole, sortRole, detected } = entry;
       const ev = evaluate(player, encounter?.id, level);
       const sortPlayer = byRole?.[sortRole ?? detected] ?? player;
       const sortEv = sortPlayer === player ? ev : evaluate(sortPlayer, encounter?.id, level);
-      return { ...entry, ev, sort: sortValue(sortEv) };
+      return { ...entry, ev, sortEv, sort: sortValue(sortEv), fitSort: entry.fitSort ?? entry.fit };
     })
-    .sort((a, b) => (a.sort !== b.sort ? b.sort - a.sort : a.fullName.localeCompare(b.fullName)));
+    .sort((a, b) => compareRows(a, b, sort));
 
   const anyHead = level ? `Any dungeon @+${level}` : "Any dungeon";
   const dgHead = encounter ? `${esc(encounter.name)}${level ? ` (want +${level})` : ""}` : "This dungeon";
 
   let html = `<div class="table-wrap"><table class="summary"><thead><tr>
-    <th>Applicant</th><th title="Set B: the execution measures — see the legend">Key fit</th><th>${anyHead}</th><th>${dgHead}</th>
+    ${sortHeadHTML("name", "Applicant", sort)}${sortHeadHTML("fit", "Key fit", sort, "Set B: the execution measures — see the legend")}${sortHeadHTML("any", anyHead, sort)}${sortHeadHTML("dungeon", dgHead, sort)}
   </tr></thead><tbody>`;
 
   rows.forEach((entry, i) => {
